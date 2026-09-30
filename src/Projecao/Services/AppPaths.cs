@@ -12,11 +12,28 @@ public sealed class AppPaths
 {
     public AppPaths()
         : this(
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "I-LOUVORES"),
+            Path.Combine(DocumentsFolder(), "I-LOUVORES"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "i-louvores"),
-            legacyDocumentsRoot: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Glorifica"),
+            legacyDocumentsRoot: Path.Combine(DocumentsFolder(), "Glorifica"),
             legacyDataFolder: Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Glorifica"))
     {
+    }
+
+    /// <summary>
+    /// SpecialFolder.MyDocuments pode devolver "" num utilizador sem sessão gráfica ainda iniciada
+    /// (falta o ~/.config/user-dirs.dirs criado pelo ambiente de trabalho no 1.º login) — nesse caso
+    /// o caminho ficaria relativo e derrubava o servidor local. A reserva é ~ (a própria pasta pessoal),
+    /// igual ao que "xdg-user-dir DOCUMENTS" devolve sem configuração (usado pelo install.sh):
+    /// as duas ficam de acordo sobre onde procurar a Galeria.
+    /// </summary>
+    private static string DocumentsFolder()
+    {
+        var docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        if (!string.IsNullOrEmpty(docs))
+            return docs;
+
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return string.IsNullOrEmpty(home) ? "." : home;
     }
 
     /// <summary>Pastas explícitas (testes, instalação portátil em pen USB…).</summary>
