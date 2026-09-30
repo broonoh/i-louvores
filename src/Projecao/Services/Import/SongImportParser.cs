@@ -142,15 +142,15 @@ public static partial class SongImportParser
     }
 
     // ===================================================================
-    // Glorifica "raw" (Documentos/Glorifica/Louvores/raw)
+    // I-LOUVORES "raw" (Documentos/I-LOUVORES/Louvores/raw)
     // ===================================================================
 
     /// <summary>
-    /// Letras do Glorifica: um .txt por louvor, título = nome do ficheiro, letra com a
-    /// sintaxe do Glorifica (mantida tal como está). Metadados opcionais no LouvoresRaw.ini:
+    /// Formato I-LOUVORES: um .txt por louvor, título = nome do ficheiro, letra com a
+    /// sintaxe do I-LOUVORES (mantida tal como está). Metadados opcionais no LouvoresRaw.ini:
     /// [Título] Nome=… NumeroAntigo=… NumeroNovo=… Tom=… Ritimo=… Autor=… ("N/D" = vazio).
     /// </summary>
-    public static ParseResult ParseGlorificaRaw(IEnumerable<(string FileName, byte[] Content)> files, byte[]? louvoresRawIni)
+    public static ParseResult ParseOneFilePerSong(IEnumerable<(string FileName, byte[] Content)> files, byte[]? louvoresRawIni)
     {
         var meta = louvoresRawIni is null ? [] : ReadIni(Decode(louvoresRawIni));
         var byTitle = meta.Values

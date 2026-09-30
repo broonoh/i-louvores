@@ -68,7 +68,7 @@ public sealed class SongImporter(IDbContextFactory<AppDbContext> dbFactory)
                     continue;
                 }
 
-                // Mesmo título, letra diferente (ex.: duas versões no Glorifica): importa as duas.
+                // Mesmo título, letra diferente (ex.: duas versões no I-LOUVORES): importa as duas.
                 for (var i = 2; ; i++)
                 {
                     var candidate = song with { Title = $"{original.Title} ({i})", Number = null };

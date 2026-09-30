@@ -60,6 +60,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         modelBuilder.Entity<BibleVerse>(e =>
         {
             e.Property(x => x.Text).IsRequired();
+            e.Property(x => x.NormalizedText).IsRequired();
 
             // Índice único que também serve a consulta em cascata Livro → Capítulo → Versículo.
             e.HasIndex(x => new { x.VersionId, x.BookId, x.Chapter, x.Verse }).IsUnique();
@@ -123,6 +124,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                 entry.Entity.NormalizedTitle = TextNormalizer.NormalizeForSearch(entry.Entity.Title);
                 entry.Entity.NormalizedLyrics = TextNormalizer.NormalizeForSearch(entry.Entity.Lyrics);
             }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<BibleVerse>())
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified)
+                entry.Entity.NormalizedText = TextNormalizer.NormalizeForSearch(entry.Entity.Text);
         }
     }
 }

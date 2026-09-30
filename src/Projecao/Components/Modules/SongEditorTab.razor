@@ -1,6 +1,6 @@
 @*
     Editor de louvores: corrigir letras e dados, criar, duplicar e apagar.
-    Pré-visualização em tempo real dos slides (com os refrões gerados pela sintaxe do Glorifica).
+    Pré-visualização em tempo real dos slides (com os refrões gerados pela sintaxe do I-LOUVORES).
 *@
 @implements IDisposable
 @inject SongService Songs
@@ -88,7 +88,7 @@
                     }
                     <textarea spellcheck="true" @ref="_lyricsRef" @bind="_edit.Lyrics" @bind:event="oninput" @bind:after="MarkDirty"></textarea>
                     <details class="formats">
-                        <summary>Marcações (iguais às do Glorifica)</summary>
+                        <summary>Marcações (iguais às do I-LOUVORES)</summary>
                         <div class="formats-body">
                             <p><code>Coro</code> no início da estrofe = refrão, repetido sozinho depois de cada estrofe seguinte ·
                                <code>*Coro</code> = só formata (sem repetições automáticas) · <code>Final</code> = última estrofe, sem refrão depois ·

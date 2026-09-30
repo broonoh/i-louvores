@@ -24,7 +24,7 @@ public class NewModulesTests : IDisposable
     }
 
     [Fact]
-    public void Legacy_glorifica_folders_are_migrated_once()
+    public void Legacy_named_folders_are_migrated_once()
     {
         var oldDocs = Path.Combine(_root, "Documentos/Glorifica");
         var oldData = Path.Combine(_root, "share/Glorifica");
@@ -45,14 +45,14 @@ public class NewModulesTests : IDisposable
     }
 
     [Fact]
-    public void Real_glorifica_folder_is_never_moved()
+    public void Folder_with_foreign_config_is_never_moved()
     {
-        var realGlorifica = Path.Combine(_root, "Documentos/Glorifica");
-        Directory.CreateDirectory(Path.Combine(realGlorifica, "Galeria"));
-        File.WriteAllText(Path.Combine(realGlorifica, "Config.ini"), "[Main]");
+        var otherAppFolder = Path.Combine(_root, "Documentos/Glorifica");
+        Directory.CreateDirectory(Path.Combine(otherAppFolder, "Galeria"));
+        File.WriteAllText(Path.Combine(otherAppFolder, "Config.ini"), "[Main]");
 
-        _ = new AppPaths(Path.Combine(_root, "Documentos/I-LOUVORES"), Path.Combine(_root, "d"), realGlorifica, null);
-        Assert.True(File.Exists(Path.Combine(realGlorifica, "Config.ini")));
+        _ = new AppPaths(Path.Combine(_root, "Documentos/I-LOUVORES"), Path.Combine(_root, "d"), otherAppFolder, null);
+        Assert.True(File.Exists(Path.Combine(otherAppFolder, "Config.ini")));
     }
 
     [Fact]
@@ -85,6 +85,27 @@ public class NewModulesTests : IDisposable
 
         var item = QueueItemFactory.FromNotice(saved);
         Assert.True(item.Slides[0].Html);
+    }
+
+    [Fact]
+    public void FromSong_marks_only_the_last_slide_with_FIM()
+    {
+        var song = new Song { Title = "Louvor", Lyrics = "Primeira estrofe\n\nSegunda estrofe\n\nTerceira estrofe" };
+        var slides = QueueItemFactory.FromSong(song).Slides;
+
+        Assert.Equal(3, slides.Count);
+        Assert.All(slides.Take(2), s => Assert.Null(s.Credit));
+        Assert.Equal("FIM", slides[^1].Credit);
+    }
+
+    [Fact]
+    public void FromSong_single_slide_song_still_gets_FIM()
+    {
+        var withLyrics = QueueItemFactory.FromSong(new Song { Title = "Louvor", Lyrics = "Estrofe única" });
+        Assert.Equal("FIM", Assert.Single(withLyrics.Slides).Credit);
+
+        var withoutLyrics = QueueItemFactory.FromSong(new Song { Title = "Louvor", Lyrics = "" });
+        Assert.Equal("FIM", Assert.Single(withoutLyrics.Slides).Credit);
     }
 
     [Fact]

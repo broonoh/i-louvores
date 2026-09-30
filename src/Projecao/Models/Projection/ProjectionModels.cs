@@ -23,7 +23,7 @@ public enum OverlayMode
 }
 
 /// <summary>
-/// Aparência do que se projeta (aba Configuração). Os valores por omissão seguem o Config.ini do Glorifica.
+/// Aparência do que se projeta (aba Configuração). Os valores por omissão seguem o Config.ini do I-LOUVORES.
 /// Tamanhos em % da altura do ecrã (máximo — o texto encolhe sozinho se não couber).
 /// </summary>
 public sealed record ProjectionStyle
@@ -38,7 +38,7 @@ public sealed record ProjectionStyle
     public string WomenColor { get; init; } = "#f7d868";
     public string SongTitleColor { get; init; } = "#fff3d6";
     public bool SongUppercase { get; init; } = true;
-    /// <summary>"block" = linhas à esquerda num bloco centrado (Glorifica); "center" = cada linha centrada.</summary>
+    /// <summary>"block" = linhas à esquerda num bloco centrado (I-LOUVORES); "center" = cada linha centrada.</summary>
     public string SongAlign { get; init; } = "block";
     public bool SongBold { get; init; } = true;
 
@@ -72,7 +72,7 @@ public sealed record SlideStyle(
 /// <summary>
 /// Um "ecrã" projetado.
 /// <paramref name="Heading"/>: texto da faixa superior (título do louvor no 1.º slide, referência bíblica).
-/// <paramref name="Markup"/>: o texto usa a sintaxe de letras do Glorifica (Coro, (H)/(M), parênteses…).
+/// <paramref name="Markup"/>: o texto usa a sintaxe de letras do I-LOUVORES (Coro, (H)/(M), parênteses…).
 /// <paramref name="Layout"/>: disposição (áreas de título/texto) — ver ProjectionView.
 /// <paramref name="Html"/>: <c>Text</c> é HTML já sanitizado (avisos formatados).
 /// <paramref name="Credit"/>: texto discreto no canto inferior direito (crédito de licença, ex.: "BLIVRE";
@@ -88,7 +88,7 @@ public sealed record ProjectionSlide(
     bool Html = false,
     string? Credit = null);
 
-/// <summary>Áreas de texto baseadas nos modelos do Glorifica (coordenadas em 1920x1080).</summary>
+/// <summary>Áreas de texto baseadas nos modelos do I-LOUVORES (coordenadas em 1920x1080).</summary>
 public enum SlideLayout
 {
     /// <summary>Texto em quase todo o ecrã.</summary>
@@ -179,7 +179,7 @@ public sealed record ProjectionState
     /// <summary>Fundo global dos slides (módulo Galeria).</summary>
     public BackgroundMedia? GlobalBackground { get; init; }
 
-    /// <summary>Fundo global do 1.º slide de cada item (como no Glorifica: "Primeiro Slide" vs "Resto").</summary>
+    /// <summary>Fundo global do 1.º slide de cada item (I-LOUVORES: "Primeiro Slide" vs "Resto").</summary>
     public BackgroundMedia? GlobalFirstSlideBackground { get; init; }
 
     public OverlayMode Overlay { get; init; }

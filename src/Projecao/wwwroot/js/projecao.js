@@ -89,7 +89,7 @@ window.projecao = (() => {
     }
 
     // ------------------------------------------------------------------
-    // Editor de avisos (contenteditable): formatação da SELEÇÃO, como no Glorifica.
+    // Editor de avisos (contenteditable): formatação da SELEÇÃO, padrão do I-LOUVORES.
     // A seleção é guardada porque clicar nas listas da barra tira o foco do editor.
     // ------------------------------------------------------------------
     const editors = new WeakMap();

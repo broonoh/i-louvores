@@ -111,6 +111,6 @@ install_bundled_data "${1:-}"
 
 echo "✔ I-LOUVORES instalado. Abra pelo menu de aplicações ou com o comando: i-louvores"
 echo "  Galeria de fundos: ~/Documentos/I-LOUVORES/Galeria"
-echo "  Tem o Glorifica neste PC (Bottles/Wine)? Aba Louvores → \"Importar do Glorifica\"."
+echo "  Tem uma instalação antiga neste PC (Bottles/Wine)? Aba Louvores → \"Importar ▾ → De instalação antiga\"."
 echo "  Vídeos MP4 (H.264) de fundo precisam de codecs: $codecs"
 echo "  (WebM funciona sem codecs extra.)"

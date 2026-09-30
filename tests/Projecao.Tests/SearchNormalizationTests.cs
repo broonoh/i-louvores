@@ -48,6 +48,21 @@ public class SearchNormalizationTests
         Directory.Delete(root, recursive: true);
     }
 
+    [Theory]
+    [InlineData("nao", "Nossa fé, não vacila", true)]              // sem acento encontra com acento
+    [InlineData("tanto amou", "Deus, tanto amou o mundo", true)]   // pontuação entre as palavras
+    [InlineData("oh senhor", "Ó Senhor", true)]                    // "oh" ⇄ "ó"
+    [InlineData("ó senhor", "Oh, Senhor", true)]                   // e vice-versa
+    [InlineData("xyz", "Nada a ver", false)]
+    public void LoosePattern_matches_like_NormalizeForSearch(string term, string text, bool matches)
+    {
+        var pattern = TextNormalizer.LoosePattern(term);
+        Assert.Equal(matches, System.Text.RegularExpressions.Regex.IsMatch(text, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+    }
+
+    [Fact]
+    public void LoosePattern_of_blank_term_is_empty() => Assert.Equal("", TextNormalizer.LoosePattern("  "));
+
     [Fact]
     public void Upgrade_recomputes_search_columns_of_existing_songs()
     {
@@ -65,6 +80,28 @@ public class SearchNormalizationTests
         {
             SchemaUpgrader.Upgrade(db);
             Assert.Equal("o jesus", db.Songs.Single(s => s.Title == "ÓH, JESUS!").NormalizedTitle);
+        }
+    }
+
+    [Fact]
+    public void Upgrade_recomputes_search_column_of_existing_bible_verses()
+    {
+        using var conn = new SqliteConnection("Data Source=:memory:");
+        conn.Open();
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(conn).Options;
+        using (var db = new AppDbContext(options))
+        {
+            DbInitializer.Initialize(db);
+            // Simula uma base da versão anterior: NormalizedText desatualizado e user_version = 2
+            db.Database.ExecuteSqlRaw("INSERT INTO BibleVersions (Abbreviation, Name, Language) VALUES ('ARC', 'Almeida', 'pt')");
+            db.Database.ExecuteSqlRaw("INSERT INTO BibleVerses (VersionId, BookId, Chapter, Verse, Text, NormalizedText) " +
+                "VALUES (1, 1, 1, 1, 'Ó Deus, tanto amou!', 'errado')");
+            db.Database.ExecuteSqlRaw("PRAGMA user_version = 2;");
+        }
+        using (var db = new AppDbContext(options))
+        {
+            SchemaUpgrader.Upgrade(db);
+            Assert.Equal("o deus tanto amou", db.BibleVerses.Single().NormalizedText);
         }
     }
 

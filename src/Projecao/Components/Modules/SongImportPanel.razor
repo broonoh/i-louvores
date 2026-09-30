@@ -27,8 +27,8 @@
 
         <label class="check" title="Quando a versão do ficheiro for diferente da que já existe, substitui (com cópia de segurança antes)">
             <input type="checkbox" @bind="_updateExisting" @bind:after="ReplanAsync" /> Atualizar: substituir louvores que já existem</label>
-        <label class="check" title="Um .txt por louvor, título = nome do ficheiro (pasta Louvores/raw do Glorifica)">
-            <input type="checkbox" @bind="_glorificaMode" /> Formato Glorifica (título = nome do ficheiro)
+        <label class="check" title="Um .txt por louvor, título = nome do ficheiro (pasta Louvores/raw do I-LOUVORES)">
+            <input type="checkbox" @bind="_oneFilePerSongMode" /> Formato I-LOUVORES (título = nome do ficheiro)
         </label>
     </div>
 
@@ -56,7 +56,7 @@ Letra do outro louvor…</pre>
             <p><b>PowerPoint (.pptx)</b>: apresentações de coletâneas — cada louvor começa num slide com o título no topo
                ("01 – TÍTULO"); a letra de cada slide vira um slide. BIS/2X e VARÕES/SERVAS ao lado da letra são mantidos.</p>
             <p><b>OpenLyrics (.xml)</b>: exportado do OpenLP e de outros programas de projeção; respeita a ordem de execução (refrão repetido).</p>
-            <p class="muted">Os ficheiros PT_*.xbY do Glorifica são cifrados e não podem ser lidos. Copie as letras para TXT.</p>
+            <p class="muted">Ficheiros .xbY de outros programas são cifrados e não podem ser lidos. Copie as letras para TXT.</p>
         </div>
     </details>
 
@@ -139,7 +139,7 @@ Letra do outro louvor…</pre>
     private bool _updateExisting = true;
     private bool _confirming;
     private ImportAction? _filter;
-    private bool _glorificaMode;
+    private bool _oneFilePerSongMode;
     private bool _busy;
     private string? _status;
     private bool _statusIsError;
@@ -171,12 +171,12 @@ Letra do outro louvor…</pre>
                 loaded.Add((file.Name, buffer.ToArray()));
             }
 
-            // LouvoresRaw.ini junto dos .txt = pasta raw do Glorifica.
+            // LouvoresRaw.ini junto dos .txt = pasta raw do I-LOUVORES.
             var ini = loaded.FirstOrDefault(f => f.Name.Equals("LouvoresRaw.ini", StringComparison.OrdinalIgnoreCase));
-            _glorificaMode |= ini.Content is not null;
-            if (_glorificaMode)
+            _oneFilePerSongMode |= ini.Content is not null;
+            if (_oneFilePerSongMode)
             {
-                var result = SongImportParser.ParseGlorificaRaw(loaded.Where(f => f.Content != ini.Content), ini.Content);
+                var result = SongImportParser.ParseOneFilePerSong(loaded.Where(f => f.Content != ini.Content), ini.Content);
                 _songs.AddRange(result.Songs);
                 _issues.AddRange(result.Issues);
             }

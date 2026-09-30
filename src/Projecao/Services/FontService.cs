@@ -7,7 +7,7 @@ public sealed class FontService
 {
     private IReadOnlyList<string>? _cache;
 
-    /// <summary>Fontes sugeridas primeiro (as do Glorifica e equivalentes livres), depois as instaladas.</summary>
+    /// <summary>Fontes sugeridas primeiro (as usadas pelo I-LOUVORES e equivalentes livres), depois as instaladas.</summary>
     public static readonly string[] Suggested =
         ["Franklin Gothic Medium", "Libre Franklin", "Arial", "Liberation Sans", "Noto Sans", "Calibri", "Carlito",
          "Verdana", "DejaVu Sans", "Open Sans", "Roboto", "Montserrat", "Georgia", "Times New Roman", "Noto Serif", "Impact"];

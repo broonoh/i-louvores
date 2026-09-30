@@ -19,4 +19,7 @@ public class BibleVerse
     public int Verse { get; set; }
 
     public required string Text { get; set; }
+
+    /// <summary>Texto sem acentos/pontuação, para a pesquisa por palavra (ver <see cref="Data.TextNormalizer.NormalizeForSearch"/>).</summary>
+    public string NormalizedText { get; set; } = string.Empty;
 }

@@ -8,7 +8,7 @@ namespace Projecao.Services;
 public static class QueueItemFactory
 {
     /// <summary>
-    /// Um slide por estrofe, com as repetições automáticas do refrão (sintaxe Glorifica).
+    /// Um slide por estrofe, com as repetições automáticas do refrão (sintaxe do I-LOUVORES).
     /// O 1.º slide leva o título na faixa superior; o último leva "FIM" no canto (Credit).
     /// </summary>
     public static QueueItem FromSong(Song song, BackgroundMedia? background = null, BackgroundMedia? firstSlideBackground = null)
@@ -34,7 +34,7 @@ public static class QueueItemFactory
     }
 
     /// <summary>
-    /// Um slide por versículo, com a referência na faixa superior ("João 3:16", como no Glorifica).
+    /// Um slide por versículo, com a referência na faixa superior ("João 3:16", como no I-LOUVORES).
     /// A sigla da versão não aparece na referência; versões Creative Commons (ex.: Bíblia Livre)
     /// levam a sigla como crédito discreto no canto, como a licença exige.
     /// <paramref name="reading"/>: leitura contínua (capítulo inteiro, o Próximo avança versículo a versículo).

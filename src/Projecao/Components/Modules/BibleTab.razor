@@ -367,9 +367,9 @@
     private MarkupString Highlight(string text)
     {
         var encoded = System.Net.WebUtility.HtmlEncode(text);
-        if (_lastWordSearch.Length < 2) return (MarkupString)encoded;
-        var term = System.Net.WebUtility.HtmlEncode(_lastWordSearch);
-        return (MarkupString)System.Text.RegularExpressions.Regex.Replace(encoded, System.Text.RegularExpressions.Regex.Escape(term),
+        var pattern = Projecao.Data.TextNormalizer.LoosePattern(_lastWordSearch);
+        if (pattern.Length == 0) return (MarkupString)encoded;
+        return (MarkupString)System.Text.RegularExpressions.Regex.Replace(encoded, pattern,
             m => $"<mark>{m.Value}</mark>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     }
 

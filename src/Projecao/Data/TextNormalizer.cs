@@ -50,6 +50,32 @@ public static partial class TextNormalizer
     public static string EscapeLike(string value) =>
         value.Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_");
 
+    private static readonly Dictionary<char, string> AccentClasses = new()
+    {
+        ['a'] = "[aàáâã]", ['e'] = "[eèéê]", ['i'] = "[iìíî]", ['o'] = "[oòóôõ]", ['u'] = "[uùúû]", ['c'] = "[cç]",
+    };
+
+    /// <summary>
+    /// Regex (para destacar resultados) equivalente à tolerância de <see cref="NormalizeForSearch"/>:
+    /// ignora maiúsculas/acentos letra a letra e aceita qualquer pontuação entre as palavras do termo,
+    /// tratando "o"/"ó"/"oh"/"óh" como iguais. Devolve "" se o termo normalizar para vazio.
+    /// </summary>
+    public static string LoosePattern(string term)
+    {
+        var words = NormalizeForSearch(term).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0)
+            return string.Empty;
+
+        string WordPattern(string w) =>
+            w == "o"
+                ? $"(?:{string.Concat(w.Select(CharClass))}|oh|óh)"
+                : string.Concat(w.Select(CharClass));
+
+        return string.Join(@"[\s,.;:!?""'()\-–*/]*", words.Select(WordPattern));
+    }
+
+    private static string CharClass(char c) => AccentClasses.TryGetValue(c, out var cls) ? cls : Regex.Escape(c.ToString());
+
     [GeneratedRegex(@"\s+")]
     private static partial Regex WhitespaceRegex();
 

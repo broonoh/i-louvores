@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Projecao.Services;
 
-/// <summary>Papel de um fundo escolhido na Galeria (como no Glorifica).</summary>
+/// <summary>Papel de um fundo escolhido na Galeria do I-LOUVORES.</summary>
 public enum BackgroundSlot
 {
     /// <summary>Fundo de todos os slides ("Louvor (Resto)").</summary>

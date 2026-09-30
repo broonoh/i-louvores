@@ -276,7 +276,7 @@ label.button input[type=file] { position: absolute; inset: 0; opacity: 0; cursor
 .plan-list tr.plan-update td:first-child { color: #93c5fd; }
 .plan-list tr.plan-create td:first-child { color: #86efac; }
 
-/* ====== Sintaxe de letras (Glorifica) — cores do Config.ini ====== */
+/* ====== Sintaxe de letras do I-LOUVORES — cores do Config.ini ====== */
 /* Louvores sempre em CAIXA ALTA no telão e nas pré-visualizações (a letra guardada não muda). */
 .mk { text-transform: var(--song-transform, uppercase); }
 .mk-line { min-height: 1.25em; }
@@ -290,7 +290,7 @@ label.button input[type=file] { position: absolute; inset: 0; opacity: 0; cursor
 /* Pré-visualizações no painel: cores mais discretas sobre fundo escuro */
 .slide-card .mk-label, .preview .mk-label { font-size: .85em; }
 
-/* ====== Migração Glorifica ====== */
+/* ====== Migração de instalação antiga ====== */
 .install { display: flex; gap: 8px; align-items: flex-start; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; min-width: 0; }
 .install.selected { border-color: var(--accent); }
 .install > span { min-width: 0; }

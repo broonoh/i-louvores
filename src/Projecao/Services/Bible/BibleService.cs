@@ -139,12 +139,13 @@ public sealed class BibleService(IDbContextFactory<AppDbContext> dbFactory, Sett
         await using (var insert = conn.CreateCommand())
         {
             insert.Transaction = tx;
-            insert.CommandText = "INSERT INTO BibleVerses (VersionId, BookId, Chapter, Verse, Text) VALUES ($v, $b, $c, $n, $t)";
+            insert.CommandText = "INSERT INTO BibleVerses (VersionId, BookId, Chapter, Verse, Text, NormalizedText) VALUES ($v, $b, $c, $n, $t, $nt)";
             var pV = insert.Parameters.Add("$v", SqliteType.Integer);
             var pB = insert.Parameters.Add("$b", SqliteType.Integer);
             var pC = insert.Parameters.Add("$c", SqliteType.Integer);
             var pN = insert.Parameters.Add("$n", SqliteType.Integer);
             var pT = insert.Parameters.Add("$t", SqliteType.Text);
+            var pNt = insert.Parameters.Add("$nt", SqliteType.Text);
             insert.Prepare();
 
             pV.Value = versionId;
@@ -154,6 +155,7 @@ public sealed class BibleService(IDbContextFactory<AppDbContext> dbFactory, Sett
                 pC.Value = verse.Chapter;
                 pN.Value = verse.Verse;
                 pT.Value = verse.Text;
+                pNt.Value = TextNormalizer.NormalizeForSearch(verse.Text);
                 await insert.ExecuteNonQueryAsync(ct);
             }
         }
@@ -166,19 +168,20 @@ public sealed class BibleService(IDbContextFactory<AppDbContext> dbFactory, Sett
     }
 
     /// <summary>
-    /// Procura texto numa versão (para encontrar um versículo com erro). Sem distinguir
-    /// maiúsculas; acentos têm de coincidir. Devolve no máximo <paramref name="limit"/> resultados.
+    /// Procura texto numa versão (achar um versículo por palavra, ou o texto errado no Editor).
+    /// Ignora maiúsculas, acentos e pontuação (vírgulas, pontos…), e trata "Ó"/"Oh" como iguais —
+    /// a mesma normalização usada na pesquisa de louvores. Devolve no máximo <paramref name="limit"/> resultados.
     /// </summary>
     public async Task<IReadOnlyList<BibleVerse>> SearchTextAsync(int versionId, string term, int limit = 200, CancellationToken ct = default)
     {
-        term = term.Trim();
-        if (term.Length < 2)
+        var normalized = TextNormalizer.NormalizeForSearch(term);
+        if (normalized.Length < 2)
             return [];
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var pattern = $"%{TextNormalizer.EscapeLike(term)}%";
+        var pattern = $"%{TextNormalizer.EscapeLike(normalized)}%";
         return await db.BibleVerses.AsNoTracking()
-            .Where(v => v.VersionId == versionId && EF.Functions.Like(v.Text, pattern, "\\"))
+            .Where(v => v.VersionId == versionId && EF.Functions.Like(v.NormalizedText, pattern, "\\"))
             .OrderBy(v => v.BookId).ThenBy(v => v.Chapter).ThenBy(v => v.Verse)
             .Take(limit)
             .ToListAsync(ct);

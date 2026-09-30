@@ -6,7 +6,7 @@ namespace Projecao.Services;
 /// - Base de dados e configuração em ~/.local/share/i-louvores: NUNCA em Documentos,
 ///   porque ferramentas de sincronização (Nextcloud, Drive…) podem corromper
 ///   ficheiros SQLite abertos, sobretudo em modo WAL.
-/// Versões ≤ 0.3 usavam pastas "Glorifica"; são migradas automaticamente no arranque.
+/// Versões ≤ 0.3 do I-LOUVORES usavam pastas "Glorifica" (nome antigo); são migradas automaticamente no arranque.
 /// </summary>
 public sealed class AppPaths
 {
@@ -34,8 +34,8 @@ public sealed class AppPaths
     }
 
     /// <summary>
-    /// Move as pastas antigas ("Glorifica") para as novas, só se as novas ainda não existirem
-    /// e se as antigas forem mesmo desta app (sem Config.ini do Glorifica verdadeiro).
+    /// Move as pastas do nome antigo ("Glorifica") para as novas, só se as novas ainda não existirem
+    /// e se as antigas forem mesmo do I-LOUVORES (sem o Config.ini de outro programa com o mesmo nome de pasta).
     /// </summary>
     private void MigrateLegacy(string? legacyDocs, string? legacyData)
     {

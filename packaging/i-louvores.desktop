@@ -7,5 +7,5 @@ Exec=@EXEC@
 Icon=i-louvores
 Terminal=false
 Categories=Office;Presentation;
-Keywords=louvor;louvores;bíblia;projetor;igreja;slides;glorifica;
+Keywords=louvor;louvores;bíblia;projetor;igreja;slides;
 StartupWMClass=i-louvores

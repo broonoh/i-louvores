@@ -13,7 +13,7 @@ public partial class Song : IAuditable
 
     /// <summary>
     /// Coletânea/hinário a que o louvor pertence (ex.: "Coletânea 2018", "Coletânea CIAS 2018",
-    /// "Avulsos") — equivalente aos ficheiros PT_*.xbY do "Banco de Louvores" do Glorifica.
+    /// "Avulsos") — equivalente aos ficheiros PT_*.xbY de outros programas de projeção.
     /// </summary>
     public string? Collection { get; set; }
 

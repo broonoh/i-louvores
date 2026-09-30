@@ -158,6 +158,24 @@ public class BibleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchTextAsync_ignores_accents_case_punctuation_and_oh()
+    {
+        var r = await _service.ImportAsync(Sample(
+            (43, 3, 16, "Ó Deus, tanto amou ao mundo, que deu o seu Filho unigênito."),
+            (19, 23, 1, "O SENHOR é meu pastor, nada me faltará.")), "arc", "Almeida RC", null, replace: false);
+
+        foreach (var q in new[] { "oh deus", "o deus", "Ó DEUS", "tanto amou ao mundo que deu", "unigenito" })
+            Assert.Single(await _service.SearchTextAsync(r.VersionId, q));
+
+        Assert.Empty(await _service.SearchTextAsync(r.VersionId, "inexistente"));
+
+        // Corrigir o texto também atualiza a coluna normalizada usada na pesquisa.
+        var verse = (await _service.GetChapterAsync(r.VersionId, 19, 23)).Single();
+        await _service.UpdateVersesAsync(new Dictionary<int, string> { [verse.Id] = "O Senhor é meu pastor, nada me faltara." });
+        Assert.Single(await _service.SearchTextAsync(r.VersionId, "faltara"));
+    }
+
+    [Fact]
     public async Task Full_bible_import_is_fast()
     {
         var zip = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/Projecao/Resources/Bible/bliv-tr_osis.zip"));

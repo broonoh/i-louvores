@@ -4,71 +4,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Projecao.Data;
 using Projecao.Services;
-using Projecao.Services.Glorifica;
 using Projecao.Services.Import;
-using Projecao.Services.Songs;
+using Projecao.Services.LegacyImport;
 using Xunit;
 
-public class SongMarkupTests
-{
-    [Fact]
-    public void Plain_lyrics_one_slide_per_stanza()
-    {
-        Assert.Equal(["A\nB", "C"], SongMarkup.BuildSlides("A\r\nB\r\n\r\n\r\nC\r\n"));
-    }
-
-    [Fact]
-    public void Tutorial_example_auto_chorus_after_each_following_stanza()
-    {
-        // Exemplo do tutorial do Glorifica: V1, Coro, V2 → V1, Coro, V2, Coro
-        var slides = SongMarkup.BuildSlides("V1\n\nCoro\nA tua palavra\n\nV2");
-        Assert.Equal(["V1", "Coro\nA tua palavra", "V2", "Coro\nA tua palavra"], slides);
-    }
-
-    [Fact]
-    public void Final_stops_without_chorus()
-    {
-        var slides = SongMarkup.BuildSlides("V1\n\nCoro 2x\nR\n\nV2\n\nFinal\nÚltima\n\nNão deve aparecer");
-        Assert.Equal(["V1", "Coro 2x\nR", "V2", "Coro 2x\nR", "Final\nÚltima"], slides);
-    }
-
-    [Fact]
-    public void Asterisk_chorus_makes_song_manual()
-    {
-        var slides = SongMarkup.BuildSlides("V1\n\n*Coro\nR\n\nV2\n\n*Coro 2x\nR");
-        Assert.Equal(["V1", "*Coro\nR", "V2", "*Coro 2x\nR"], slides);
-    }
-
-    [Fact]
-    public void Parse_labels_voices_parentheses_and_slash()
-    {
-        var s = SongMarkup.Parse("*CORO 2X\n(M) Alegrai-vos,\n(H) Regozijai-vos (2x)\n/Instrumentos");
-        Assert.True(s.IsChorus);
-        Assert.Equal(MarkupLineKind.Label, s.Lines[0].Kind);
-        Assert.Equal("CORO 2X", s.Lines[0].Segments[0].Text);             // asterisco não aparece
-        Assert.Equal(MarkupLineKind.Women, s.Lines[1].Kind);
-        Assert.Equal(MarkupLineKind.Men, s.Lines[2].Kind);
-        Assert.Contains(s.Lines[2].Segments, g => g.IsParenthetical && g.Text == "(2x)");
-        Assert.Equal(MarkupLineKind.Blank, s.Lines[3].Kind);               // "/" → linha em branco
-        Assert.Equal("Instrumentos", s.Lines[4].Segments[0].Text);
-        Assert.False(SongMarkup.Parse("Cantar 2x\nTexto").IsChorus);
-        Assert.Equal(MarkupLineKind.Label, SongMarkup.Parse("Cantar 2x\nTexto").Lines[0].Kind);
-    }
-
-    [Fact]
-    public void Song_queue_item_has_title_heading_on_first_slide()
-    {
-        var item = QueueItemFactory.FromSong(new Projecao.Models.Song { Title = "Agnus Dei", Number = 7, Lyrics = "V1\n\nCoro\nR\n\nV2" });
-        Assert.Equal("7 - Agnus Dei", item.Title);
-        Assert.Equal(4, item.Slides.Count);
-        Assert.Equal("Agnus Dei", item.Slides[0].Heading);
-        Assert.Equal(Projecao.Models.Projection.SlideLayout.SongFirst, item.Slides[0].Layout);
-        Assert.Null(item.Slides[1].Heading);
-        Assert.All(item.Slides, s => Assert.True(s.Markup));
-    }
-}
-
-public class GlorificaMigrationTests : IDisposable
+public class LegacyMigrationTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory().FullName;
     private readonly SqliteConnection _conn = new("Data Source=:memory:");
@@ -81,10 +21,10 @@ public class GlorificaMigrationTests : IDisposable
         return Encoding.GetEncoding(1252);
     }
 
-    /// <summary>Cria uma instalação falsa do Glorifica dentro de um "Bottles".</summary>
+    /// <summary>Cria uma instalação antiga falsa dentro de um "Bottles".</summary>
     private string FakeInstall()
     {
-        var docs = Path.Combine(_root, "home/.var/app/com.usebottles.bottles/data/bottles/bottles/Glorifica/drive_c/users/ana/Documents/Glorifica");
+        var docs = Path.Combine(_root, "home/.var/app/com.usebottles.bottles/data/bottles/bottles/Legado/drive_c/users/ana/Documents/Glorifica");
         var raw = Path.Combine(docs, "Louvores/raw");
         Directory.CreateDirectory(raw);
         File.WriteAllBytes(Path.Combine(raw, "Águas que curam.txt"), Win1252.GetBytes("Águas que curam\r\n\r\nCoro\r\nÉ o Senhor\r\n\r\nV2"));
@@ -121,7 +61,7 @@ public class GlorificaMigrationTests : IDisposable
         var settings = new SettingsStore(paths);
         var projection = new ProjectionService(NullLogger<ProjectionService>.Instance);
         var gallery = new GalleryService(media, projection, settings, NullLogger<GalleryService>.Instance);
-        var service = new GlorificaMigrationService(new SongImporter(new Factory(options)), media, gallery, NullLogger<GlorificaMigrationService>.Instance);
+        var service = new LegacyMigrationService(new SongImporter(new Factory(options)), media, gallery, NullLogger<LegacyMigrationService>.Instance);
 
         var found = Assert.Single(service.Detect(Path.Combine(_root, "home")));
         Assert.Equal((2, 4, true), (found.SongCount, found.ImageCount, found.HasConfig)); // 3 da galeria + 1 estilo (maior resolução)
@@ -138,7 +78,7 @@ public class GlorificaMigrationTests : IDisposable
         Assert.Equal(4, result.ImagesCopied);
         Assert.Equal("Louvor(Primeiro Slide) novo.jpg", settings.GalleryFirstSlideBackground);
         Assert.Equal("FUNDO_BIBLIA.jpg", settings.GalleryBibleBackground);
-        Assert.Equal(new byte[] { 9, 9, 9 }, File.ReadAllBytes(Path.Combine(media.GalleryFolder, GlorificaMigrationService.TemplatesFolder, "Estilo 1 - style1_1.jpg")));
+        Assert.Equal(new byte[] { 9, 9, 9 }, File.ReadAllBytes(Path.Combine(media.GalleryFolder, LegacyMigrationService.TemplatesFolder, "Estilo 1 - style1_1.jpg")));
 
         // Repetir não duplica nada
         var again = await service.MigrateAsync(docs, "Avulsos", false, true, true);
@@ -149,7 +89,7 @@ public class GlorificaMigrationTests : IDisposable
     [InlineData(@"C:\users\ana\Documents\Glorifica\Galeria\A b.jpg", "Galeria/A b.jpg")]
     [InlineData(@"C:\outro\sitio.jpg", null)]
     public void Maps_windows_paths(string win, string? expected) =>
-        Assert.Equal(expected?.Replace('/', Path.DirectorySeparatorChar), GlorificaMigrationService.MapWindowsPath(win));
+        Assert.Equal(expected?.Replace('/', Path.DirectorySeparatorChar), LegacyMigrationService.MapWindowsPath(win));
 
     public void Dispose()
     {

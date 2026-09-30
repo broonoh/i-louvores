@@ -10,7 +10,7 @@ namespace Projecao.Data;
 /// </summary>
 public static class SchemaUpgrader
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     public static void Upgrade(AppDbContext db)
     {
@@ -25,6 +25,10 @@ public static class SchemaUpgrader
         // v2: pesquisa ignora pontuação e "Ó/Oh/Óh" → recalcula as colunas normalizadas dos louvores
         if (version < 2)
             RecomputeSongSearchColumns(db);
+
+        // v3: pesquisa por palavra na Bíblia (aba Bíblia e Editor) ignora acentos/pontuação também
+        if (version < 3)
+            RecomputeBibleSearchColumn(db);
 
         db.Database.ExecuteSqlRaw($"PRAGMA user_version = {CurrentVersion};");
     }
@@ -58,6 +62,42 @@ public static class SchemaUpgrader
             {
                 pT.Value = TextNormalizer.NormalizeForSearch(title);
                 pL.Value = TextNormalizer.NormalizeForSearch(lyrics);
+                pI.Value = id;
+                update.ExecuteNonQuery();
+            }
+        }
+        tx.Commit();
+    }
+
+    private static void RecomputeBibleSearchColumn(AppDbContext db)
+    {
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != ConnectionState.Open) conn.Open();
+        if (Scalar(db, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'BibleVerses';") == 0)
+            return; // base sem a tabela (ainda) — nada a recalcular
+
+        AddColumnIfMissing(db, "BibleVerses", "NormalizedText", "TEXT NOT NULL DEFAULT ''");
+
+        using var tx = conn.BeginTransaction();
+
+        var rows = new List<(long Id, string Text)>();
+        using (var read = conn.CreateCommand())
+        {
+            read.Transaction = tx;
+            read.CommandText = "SELECT Id, Text FROM BibleVerses";
+            using var r = read.ExecuteReader();
+            while (r.Read()) rows.Add((r.GetInt64(0), r.GetString(1)));
+        }
+
+        using (var update = conn.CreateCommand())
+        {
+            update.Transaction = tx;
+            update.CommandText = "UPDATE BibleVerses SET NormalizedText = $n WHERE Id = $id";
+            var pN = update.CreateParameter(); pN.ParameterName = "$n"; update.Parameters.Add(pN);
+            var pI = update.CreateParameter(); pI.ParameterName = "$id"; update.Parameters.Add(pI);
+            foreach (var (id, text) in rows)
+            {
+                pN.Value = TextNormalizer.NormalizeForSearch(text);
                 pI.Value = id;
                 update.ExecuteNonQuery();
             }

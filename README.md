@@ -1,7 +1,7 @@
 # I-LOUVORES — louvores, Bíblia e avisos em projetor ou TV (Linux)
 
-App desktop para **qualquer distribuição Linux** (X11 ou Wayland; KDE, GNOME, XFCE, Cinnamon…),
-tendo como referência o Glorifica v6.0.0.1. Feito em .NET 9 + Blazor, com janelas nativas GTK/WebKit (Photino).
+App desktop para **qualquer distribuição Linux** (X11 ou Wayland; KDE, GNOME, XFCE, Cinnamon…).
+Feito em .NET 9 + Blazor, com janelas nativas GTK/WebKit (Photino).
 
 ## Instalar (utilizador final)
 
@@ -62,11 +62,11 @@ Antes de restaurar, é guardada uma cópia dos dados atuais em `~/.local/share/i
 | `→` `↓` `PageDown` `Espaço` | Próximo |
 | `←` `↑` `PageUp` | Anterior |
 
-### Vindo do Glorifica?
-Aba **Louvores → Importar ▾ → Trazer do Glorifica**. Se o Glorifica estiver instalado neste PC (Bottles, Wine ou PlayOnLinux)
+### Tem uma instalação antiga?
+Aba **Louvores → Importar ▾ → De instalação antiga**. Se essa instalação estiver neste PC (Bottles, Wine ou PlayOnLinux)
 ou se copiar a pasta `Documentos\Glorifica` do Windows para `~/Documentos/Glorifica`, o I-LOUVORES copia num clique:
 as letras (pasta `Louvores/raw`), as imagens da Galeria e os modelos, e os fundos que estavam escolhidos
-(1.º slide, restantes, Bíblia, cronómetro). As marcações do Glorifica (`Coro`, `*Coro`, `Final`, `(H)`/`(M)`, `/`)
+(1.º slide, restantes, Bíblia, cronómetro). As marcações (`Coro`, `*Coro`, `Final`, `(H)`/`(M)`, `/`)
 são projetadas da mesma forma. Pode repetir sem criar duplicados.
 
 ### Abas
@@ -93,7 +93,7 @@ milhares de louvores (a lista é virtualizada).
 - **Editor → Louvores:** selecione o texto na letra e use a barra 🎨.
 - Na letra fica guardado como `[cor=#facc15]EM NÓS[/cor]` (pode escrever à mão).
 
-### Marcações da letra (compatíveis com o Glorifica)
+### Marcações da letra
 | Marcação | Efeito |
 |---|---|
 | linha em branco | novo slide |
@@ -118,7 +118,7 @@ o versículo que está no telão.
 
 ### Galeria (fundos)
 - Clique num cartão para o usar como **fundo dos slides** (marca **SELECIONADO!**).
-- **1.º slide** define o fundo só do primeiro slide de cada louvor (ex.: a imagem com a faixa "LOUVOR", como no Glorifica).
+- **1.º slide** define o fundo só do primeiro slide de cada louvor (ex.: a imagem com a faixa "LOUVOR").
 - **＋ Adicionar ficheiros** copia imagens/vídeos para a Galeria; também pode copiá-los diretamente para a pasta, e a grelha atualiza-se sozinha.
 - **Projetar** num cartão põe só essa mídia na fila (ex.: vídeo de abertura).
 
@@ -134,7 +134,7 @@ o versículo que está no telão.
   mostra-o como *atualizar*. Ao confirmar, a letra antiga é **substituída**, e antes disso é feita uma cópia de segurança.
 - Aceita UTF-8 e Windows-1252 (ficheiros antigos). Mostra a pré-visualização (novo / atualizar / ignorar) e grava tudo numa transação.
 
-Pastas: fundos em `~/Documentos/I-LOUVORES/Galeria`, base de dados e configuração em `~/.local/share/i-louvores` (as pastas antigas "Glorifica" da v0.3 são migradas sozinhas).
+Pastas: fundos em `~/Documentos/I-LOUVORES/Galeria`, base de dados e configuração em `~/.local/share/i-louvores` (as pastas do nome antigo "Glorifica", usado até a v0.3, são migradas sozinhas).
 
 ## Arquitetura
 
@@ -191,12 +191,12 @@ Em Debug, o log mostra a URL do painel com token, útil para depurar num browser
 
 ## Notas
 
-- **Louvores do Glorifica (`PT_*.xbY`)**: são ficheiros proprietários cifrados e **não são importados** (nem se contorna a cifra).
-  Use a pasta `Louvores/raw` do Glorifica, PPTX, TXT, CSV ou OpenLyrics.
+- **Louvores cifrados de outros programas (`PT_*.xbY`)**: são ficheiros proprietários e **não são importados** (nem se contorna a cifra).
+  Use a pasta `Louvores/raw` de uma instalação antiga, PPTX, TXT, CSV ou OpenLyrics.
 - **Bíblia**: a Bíblia Livre vem embutida (`Resources/Bible`); as outras versões são importadas por cada igreja.
 - **Schema**: `EnsureCreated()` + `SchemaUpgrader` (`PRAGMA user_version`, atualmente v2) para as alterações seguintes.
 - **Dados**: base de dados em `~/.local/share/i-louvores/i-louvores.db` (SQLite, WAL); cópias automáticas em `…/copias`.
 
 ## Próximos passos
 1. Flatpak (Flathub) como alternativa ao tar.gz
-2. Versão para Windows (por agora, no Windows continua-se a usar o Glorifica)
+2. Versão para Windows

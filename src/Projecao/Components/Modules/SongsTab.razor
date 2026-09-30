@@ -25,8 +25,28 @@
         </select>
         <input type="search" placeholder="Procurar: nº, CIAS 12 ou nome…" @bind="_query" @bind:event="oninput" @bind:after="SearchAsync" />
         <label><input type="checkbox" @bind="_inLyrics" @bind:after="SearchAsync" /> Procurar dentro da letra</label>
-        <button @onclick="OpenImport" title="Letras em TXT, planilha CSV (Excel/LibreOffice) ou OpenLyrics (OpenLP)">📥 Importar</button>
+        <div class="menu-anchor">
+            <button @onclick="() => _showImportMenu = !_showImportMenu">📥 Importar ▾</button>
+            @if (_showImportMenu)
+            {
+                <div class="menu">
+                    <button @onclick="() => OpenImport(legacy: false)">
+                        <b>De ficheiros</b>
+                        <span>Letras em TXT, planilha CSV (Excel/LibreOffice) ou OpenLyrics (OpenLP).</span>
+                    </button>
+                    <button @onclick="() => OpenImport(legacy: true)">
+                        <b>De instalação antiga</b>
+                        <span>Copia os louvores, fundos e configurações de uma instalação antiga do I-LOUVORES neste computador. Só é preciso uma vez.</span>
+                    </button>
+                </div>
+            }
+        </div>
     </div>
+
+    @if (_showLegacy)
+    {
+        <LegacyMigrationPanel OnClose="() => _showLegacy = false" OnImported="ReloadAfterImportAsync" />
+    }
 
     @if (_showImport)
     {
@@ -102,8 +122,15 @@
     private int _slideIndex;
     private CancellationTokenSource? _searchCts;
     private bool _showImport;
+    private bool _showLegacy;
+    private bool _showImportMenu;
 
-    private void OpenImport() => _showImport = true;
+    private void OpenImport(bool legacy)
+    {
+        _showImportMenu = false;
+        _showLegacy = legacy;
+        _showImport = !legacy;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -173,7 +200,7 @@
     {
         _slideIndex = index;
 
-        // Se este louvor já está no ar, o clique navega diretamente (como no Glorifica).
+        // Se este louvor já está no ar, o clique navega diretamente.
         if (Projection.State.CurrentItem is { Kind: ProjectionContentKind.Song } cur && cur.SourceId == _selected?.Id)
             Projection.GoToSlide(index);
     }

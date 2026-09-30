@@ -1,32 +1,35 @@
 using Microsoft.Extensions.Logging;
 using Projecao.Services.Import;
 
-namespace Projecao.Services.Glorifica;
+namespace Projecao.Services.LegacyImport;
 
-/// <summary>Uma instalação do Glorifica encontrada neste computador.</summary>
-public sealed record GlorificaInstallation(string DocumentsFolder, string Label, int SongCount, int ImageCount, bool HasConfig);
+/// <summary>Uma instalação antiga do I-LOUVORES encontrada neste computador.</summary>
+public sealed record LegacyInstallation(string DocumentsFolder, string Label, int SongCount, int ImageCount, bool HasConfig);
 
-public sealed record GlorificaMigrationResult(ImportResult Songs, int ImagesCopied, IReadOnlyList<string> Notes);
+public sealed record LegacyMigrationResult(ImportResult Songs, int ImagesCopied, IReadOnlyList<string> Notes);
 
 /// <summary>
-/// Migração a partir do Glorifica (Windows, também a correr em Linux via Bottles/Wine):
+/// Migração a partir de uma instalação antiga do I-LOUVORES (Windows, também a correr em Linux via Bottles/Wine):
 ///   • letras de Louvores/raw/*.txt + metadados de LouvoresRaw.ini;
 ///   • imagens da Galeria e modelos de Etc/ (estilos, fundos, tela de espera);
 ///   • fundos configurados no Config.ini (louvor 1.º slide / restantes / Bíblia).
 /// Os ficheiros .xbY (cifrados) não são lidos.
 /// </summary>
-public sealed class GlorificaMigrationService(
+public sealed class LegacyMigrationService(
     SongImporter songImporter,
     MediaLibraryService media,
     GalleryService gallery,
-    ILogger<GlorificaMigrationService> logger)
+    ILogger<LegacyMigrationService> logger)
 {
-    public const string TemplatesFolder = "Glorifica - Modelos";
+    public const string TemplatesFolder = "I-LOUVORES - Modelos";
+
+    /// <summary>Nome da pasta de documentos usado pela instalação antiga (ver <see cref="AppPaths"/>).</summary>
+    private const string LegacyFolderName = "Glorifica";
 
     private static readonly string[] ImageExtensions = [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp"];
 
-    /// <summary>Procura pastas "Documents/Glorifica" em prefixos Wine conhecidos e em Documentos.</summary>
-    public IReadOnlyList<GlorificaInstallation> Detect(string? home = null)
+    /// <summary>Procura pastas da instalação antiga em prefixos Wine conhecidos e em Documentos.</summary>
+    public IReadOnlyList<LegacyInstallation> Detect(string? home = null)
     {
         home ??= Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var candidates = new List<(string Path, string Label)>();
@@ -38,7 +41,7 @@ public sealed class GlorificaMigrationService(
             foreach (var prefix in prefixes)
                 foreach (var user in SafeDirs(Path.Combine(prefix, "drive_c", "users")))
                     foreach (var docs in new[] { "Documents", "My Documents", "Meus Documentos", "Documentos" })
-                        candidates.Add((Path.Combine(user, docs, "Glorifica"), $"{label}: {Path.GetFileName(prefix)}"));
+                        candidates.Add((Path.Combine(user, docs, LegacyFolderName), $"{label}: {Path.GetFileName(prefix)}"));
         }
 
         Wine(Path.Combine(home, ".var/app/com.usebottles.bottles/data/bottles/bottles"), "Bottles", bottles: true);
@@ -47,14 +50,14 @@ public sealed class GlorificaMigrationService(
         foreach (var dir in SafeDirs(home).Where(d => Path.GetFileName(d).StartsWith(".wine", StringComparison.Ordinal)))
             Wine(dir, "Wine", bottles: false);
 
-        // Cópia de uma pasta do Windows (ex.: pen USB) — só se tiver Config.ini ou Louvores/raw do Glorifica.
+        // Cópia de uma pasta do Windows (ex.: pen USB) — só se tiver Config.ini ou Louvores/raw da instalação antiga.
         foreach (var docs in new[] { "Documentos", "Documents" })
-            candidates.Add((Path.Combine(home, docs, "Glorifica"), "Documentos"));
+            candidates.Add((Path.Combine(home, docs, LegacyFolderName), "Documentos"));
 
         return candidates
             .Where(c => Directory.Exists(c.Path) && (File.Exists(Path.Combine(c.Path, "Config.ini")) || Directory.Exists(RawFolder(c.Path))))
             .DistinctBy(c => RealPath(c.Path)) // Bottles/Wine ligam users/<nome> → users/steamuser
-            .Select(c => new GlorificaInstallation(c.Path, c.Label,
+            .Select(c => new LegacyInstallation(c.Path, c.Label,
                 Directory.Exists(RawFolder(c.Path)) ? Directory.GetFiles(RawFolder(c.Path), "*.txt").Length : 0,
                 ImageSources(c.Path).Count,
                 File.Exists(Path.Combine(c.Path, "Config.ini"))))
@@ -72,10 +75,10 @@ public sealed class GlorificaMigrationService(
         var ini = Path.Combine(raw, "LouvoresRaw.ini");
         var files = Directory.GetFiles(raw, "*.txt").OrderBy(f => f, StringComparer.CurrentCultureIgnoreCase)
             .Select(f => (Path.GetFileName(f), File.ReadAllBytes(f)));
-        return SongImportParser.ParseGlorificaRaw(files, File.Exists(ini) ? File.ReadAllBytes(ini) : null);
+        return SongImportParser.ParseOneFilePerSong(files, File.Exists(ini) ? File.ReadAllBytes(ini) : null);
     }
 
-    public async Task<GlorificaMigrationResult> MigrateAsync(string documentsFolder, string? collection, bool updateExisting,
+    public async Task<LegacyMigrationResult> MigrateAsync(string documentsFolder, string? collection, bool updateExisting,
         bool importImages, bool applyBackgrounds, CancellationToken ct = default)
     {
         var notes = new List<string>();
@@ -108,7 +111,7 @@ public sealed class GlorificaMigrationService(
             }
         }
 
-        // 3) Fundos configurados no Glorifica
+        // 3) Fundos configurados na instalação antiga
         if (applyBackgrounds && File.Exists(Path.Combine(documentsFolder, "Config.ini")))
         {
             var ini = SongImportParser.ReadIni(SongImportParser.Decode(await File.ReadAllBytesAsync(Path.Combine(documentsFolder, "Config.ini"), ct)));
@@ -127,9 +130,9 @@ public sealed class GlorificaMigrationService(
             Apply("Geral", "ImgFundo_GeralPath1", BackgroundSlot.General);
         }
 
-        logger.LogInformation("Migração Glorifica: {Created} louvores novos, {Updated} atualizados, {Images} imagens",
+        logger.LogInformation("Migração da instalação antiga: {Created} louvores novos, {Updated} atualizados, {Images} imagens",
             songs.Created, songs.Updated, copied);
-        return new GlorificaMigrationResult(songs, copied, notes);
+        return new LegacyMigrationResult(songs, copied, notes);
     }
 
     /// <summary>
@@ -171,13 +174,13 @@ public sealed class GlorificaMigrationService(
             .Select(x => x.Dir)
             .FirstOrDefault();
 
-    /// <summary>"C:\users\x\Documents\Glorifica\Galeria\A.jpg" → "Galeria/A.jpg" (relativo à pasta do Glorifica).</summary>
+    /// <summary>"C:\users\x\Documents\Glorifica\Galeria\A.jpg" → "Galeria/A.jpg" (relativo à pasta da instalação antiga).</summary>
     public static string? MapWindowsPath(string? windowsPath)
     {
         if (string.IsNullOrWhiteSpace(windowsPath)) return null;
         var normalized = windowsPath.Replace('\\', '/');
-        var marker = normalized.IndexOf("/Glorifica/", StringComparison.OrdinalIgnoreCase);
-        return marker < 0 ? null : normalized[(marker + "/Glorifica/".Length)..].Replace('/', Path.DirectorySeparatorChar);
+        var marker = normalized.IndexOf($"/{LegacyFolderName}/", StringComparison.OrdinalIgnoreCase);
+        return marker < 0 ? null : normalized[(marker + LegacyFolderName.Length + 2)..].Replace('/', Path.DirectorySeparatorChar);
     }
 
     private static string SlotLabel(BackgroundSlot slot) => slot switch

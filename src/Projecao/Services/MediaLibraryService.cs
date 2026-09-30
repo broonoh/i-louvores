@@ -10,7 +10,7 @@ public sealed record MediaFile(string Name, string RelativePath, string Url, boo
 }
 
 /// <summary>
-/// Acesso à pasta Documentos/Glorifica/Galeria.
+/// Acesso à pasta Documentos/I-LOUVORES/Galeria.
 ///
 /// A página não pode abrir caminhos locais (file://). O servidor local publica a
 /// pasta em <see cref="UrlPrefix"/> (ver DesktopHost), e aqui convertemos

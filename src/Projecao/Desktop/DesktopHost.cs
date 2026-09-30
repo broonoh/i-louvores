@@ -99,7 +99,7 @@ internal static class DesktopHost
         services.AddSingleton<GalleryService>();
         services.AddSingleton<Projecao.Services.Import.SongImporter>();
         services.AddSingleton<Projecao.Services.Bible.BibleService>();
-        services.AddSingleton<Projecao.Services.Glorifica.GlorificaMigrationService>();
+        services.AddSingleton<Projecao.Services.LegacyImport.LegacyMigrationService>();
         services.AddSingleton<Projecao.Services.Notices.NoticeService>();
         services.AddSingleton<Projecao.Services.Songs.SongService>();
         services.AddSingleton<Projecao.Services.Backup.BackupService>();
@@ -147,7 +147,7 @@ internal static class DesktopHost
         var access = app.Services.GetRequiredService<LocalAccess>();
         app.Use(access.InvokeAsync);
 
-        // Documentos/Glorifica/Galeria → /galeria/… (fundos de imagem e vídeo).
+        // Documentos/I-LOUVORES/Galeria → /galeria/… (fundos de imagem e vídeo).
         app.UseStaticFiles(new StaticFileOptions
         {
             FileProvider = new PhysicalFileProvider(paths.GalleryFolder),

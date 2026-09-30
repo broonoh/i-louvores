@@ -25,7 +25,7 @@ public sealed record MarkupLine(MarkupLineKind Kind, IReadOnlyList<MarkupSegment
 public sealed record MarkupSlide(bool IsChorus, IReadOnlyList<MarkupLine> Lines);
 
 /// <summary>
-/// Sintaxe de letras do Glorifica (ver "Tutorial - Editar &amp; Adicionar Louvores"):
+/// Sintaxe de letras do I-LOUVORES (ver "Tutorial - Editar &amp; Adicionar Louvores"):
 ///   • linha em branco separa slides;
 ///   • estrofe começada por "Coro" = refrão, repetido AUTOMATICAMENTE depois de cada estrofe seguinte;
 ///   • "*Coro" (com asterisco) só formata — o louvor passa a ser "manual" e nada é gerado;

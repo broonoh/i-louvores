@@ -24,7 +24,7 @@
 }
 
 /*
- * Áreas de texto — coordenadas dos modelos do Glorifica (Config.ini, base 1920x1080),
+ * Áreas de texto — coordenadas dos modelos do I-LOUVORES (Config.ini, base 1920x1080),
  * em percentagem para funcionar em qualquer resolução (projetor 1024x768, TV 4K…).
  * --safe-x/--safe-y = margem de overscan da TV.
  */
@@ -37,7 +37,7 @@
     justify-content: center;
 }
 
-/* Glorifica: ForcarAlinhamentoHorizontalCentro=1 / VerticalCentro=1 */
+/* I-LOUVORES: ForcarAlinhamentoHorizontalCentro=1 / VerticalCentro=1 */
 .slide { text-align: center; }
 
 /* Slides seguintes (LouvorCoord2: 48,20 → 1871,1031) */
@@ -111,7 +111,7 @@
 .text.html ::deep p, .text.html ::deep div { margin: 0; }
 
 /*
- * Letras de louvor (como no Glorifica: Alinhamento_Louvor=left + ForcarAlinhamentoHorizontalCentro=1):
+ * Letras de louvor (I-LOUVORES: Alinhamento_Louvor=left + ForcarAlinhamentoHorizontalCentro=1):
  * o BLOCO fica centrado no ecrã, mas as linhas alinham à esquerda entre si.
  * Cada linha da letra nunca é partida — o ajuste automático diminui a fonte até a mais longa caber.
  */
