@@ -1,0 +1,222 @@
+@*
+    Janela do projetor (2.º monitor). Sem bordas e sem interação: apenas desenha
+    ProjectionService.State.Live. Toda a lógica vive no serviço.
+*@
+@implements IAsyncDisposable
+@inject ProjectionService Projection
+@inject IJSRuntime JS
+@inject ILogger<ProjectionView> Logger
+
+@{
+    // Captura o frame usado neste render (OnAfterRender ajusta o texto deste mesmo frame).
+    _rendered = Projection.State.Live;
+    var live = _rendered;
+    var safe = Projection.State.SafeAreaPercent.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    var slide = live.Slide;
+    var solidBack = CssSafe.Color(slide?.Style?.BackColor);
+}
+
+<div class="stage @(Projection.State.Style.SongAlign == "center" ? "song-center" : null)"
+     style="--safe-x:@(safe)vw; --safe-y:@(safe)vh; @ProjectionCss.Vars(Projection.State.Style)">
+    @if (!live.IsBlank && live.Overlay != OverlayMode.None && live.OverlayFullScreen)
+    {
+        @* ---------- Relógio / cronómetro em ecrã inteiro (módulo Geral) ---------- *@
+        var bg = live.GeneralBackground ?? live.Background;
+        @if (bg is { IsVideo: true })
+        {
+            <video @key="bg.Url" class="bg" src="@bg.Url" autoplay muted loop playsinline></video>
+        }
+        else if (bg is not null)
+        {
+            <img @key="bg.Url" class="bg" src="@bg.Url" alt="" draggable="false" />
+        }
+        else
+        {
+            <div class="bg bg-default"></div>
+        }
+        var (value, finished) = TimerText(live);
+        <div class="timer-full @(finished ? "finished" : null)">@value</div>
+    }
+    else if (!live.IsBlank)
+    {
+        @* ---------- Fundo ---------- *@
+        @if (solidBack is not null)
+        {
+            <div class="bg" style="background:@solidBack"></div>
+        }
+        else if (live.Background is { IsVideo: true } video)
+        {
+            <video @key="video.Url" class="bg" src="@video.Url" autoplay muted loop playsinline disablepictureinpicture></video>
+        }
+        else if (live.Background is { } image)
+        {
+            <img @key="image.Url" class="bg" src="@image.Url" alt="" draggable="false" />
+        }
+        else
+        {
+            <div class="bg bg-default"></div>
+        }
+
+        @* ---------- Texto ---------- *@
+        @if (slide is not null && (!string.IsNullOrWhiteSpace(slide.Text) || slide.Heading is not null))
+        {
+            <div class="layout @LayoutClass(slide.Layout)" @key="live.ContentVersion">
+                @if (!string.IsNullOrWhiteSpace(slide.Heading))
+                {
+                    <div class="heading-box"><div class="heading" @ref="_headingRef">@slide.Heading</div></div>
+                }
+                <div class="slide" style="@SlideCss(slide.Style)">
+                    <div class="text-box">
+                        <div class="text @(slide.Markup ? "markup" : null) @(slide.Html ? "html" : null)" @ref="_textRef">
+                            @if (slide.Html)
+                            {
+                                @* Já sanitizado pelo NoticeService (lista branca de tags/estilos). *@
+                                @((MarkupString)slide.Text)
+                            }
+                            else if (slide.Markup)
+                            {
+                                <SlideText Text="@slide.Text" />
+                            }
+                            else
+                            {
+                                @slide.Text
+                            }
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(slide.Caption))
+                    {
+                        <div class="caption">@slide.Caption</div>
+                    }
+                </div>
+                @if (!string.IsNullOrWhiteSpace(slide.Credit))
+                {
+                    <div class="credit">@slide.Credit</div>
+                }
+            </div>
+        }
+
+        @* ---------- Sobreposição (relógio / cronómetro) ---------- *@
+        @if (live.Overlay != OverlayMode.None)
+        {
+            var (value, finished) = TimerText(live);
+            <div class="overlay @(finished ? "finished" : null)">@value</div>
+        }
+    }
+</div>
+
+@code {
+    private LiveFrame _rendered = LiveFrame.Empty;
+    private ElementReference _textRef;
+    private ElementReference _headingRef;
+    private (long Version, bool Blank)? _fitted;
+    private Timer? _ticker;
+    private DotNetObjectReference<ProjectionView>? _selfRef;
+
+    protected override void OnInitialized()
+    {
+        Projection.OnStateChanged += HandleStateChanged;
+
+        // Relógio/cronómetro: redesenha a cada segundo, mas só se houver sobreposição ativa.
+        _ticker = new Timer(_ =>
+        {
+            if (Projection.State.Live.Overlay != OverlayMode.None)
+                _ = InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender)
+            {
+                // Atalhos também aqui: se o operador clicar no projetor, Alt+F11 continua a funcionar.
+                _selfRef = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("projecao.markProjector");
+                await JS.InvokeVoidAsync("projecao.registerHotkeys", _selfRef);
+            }
+
+            // Reajusta o texto só quando o slide mudou ou reapareceu após Blank.
+            var live = _rendered;
+            var key = (live.ContentVersion, live.IsBlank);
+            if (live.Slide is { } slide && !live.IsBlank && _fitted != key)
+            {
+                _fitted = key;
+                if (!string.IsNullOrWhiteSpace(slide.Text))
+                    await JS.InvokeVoidAsync("projecao.fitText", _textRef, slide.Style?.FontSizePx ?? 0, 0,
+                        ProjectionCss.MaxSizePct(Projection.State.Style, slide));
+                if (!string.IsNullOrWhiteSpace(slide.Heading))
+                    await JS.InvokeVoidAsync("projecao.fitText", _headingRef, 0, 0);
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            // Janela a fechar — ignorar.
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Falha no pós-render da projeção");
+        }
+    }
+
+    [JSInvokable]
+    public void OnHotkey(string action) => Projection.ExecuteHotkey(action);
+
+    private void HandleStateChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private static string LayoutClass(SlideLayout layout) => layout switch
+    {
+        SlideLayout.SongFirst => "layout-song-first",
+        SlideLayout.Bible => "layout-bible",
+        _ => "layout-full"
+    };
+
+    /// <summary>Estilo inline do slide (Avisos). Valores validados para evitar injeção de CSS.</summary>
+    private static string? SlideCss(SlideStyle? style)
+    {
+        if (style is null)
+            return null;
+
+        var css = new List<string> { $"text-align:{CssSafe.TextAlign(style.TextAlign)}" };
+        if (CssSafe.Color(style.ForeColor) is { } color)
+            css.Add($"color:{color}");
+        if (CssSafe.FontFamily(style.FontFamily) is { } font)
+            css.Add($"font-family:{font}, 'Noto Sans', sans-serif");
+        return string.Join(';', css);
+    }
+
+    /// <summary>Texto do relógio/cronómetro e se a contagem regressiva terminou.</summary>
+    private static (string Text, bool Finished) TimerText(LiveFrame live) => live.Overlay switch
+    {
+        OverlayMode.Clock => (DateTime.Now.ToString("HH:mm:ss"), false),
+        OverlayMode.Countdown when live.CountdownTarget is { } t => (FormatRemaining(t - DateTimeOffset.Now), t <= DateTimeOffset.Now),
+        OverlayMode.Stopwatch when live.CountdownTarget is { } start => (FormatRemaining(DateTimeOffset.Now - start, roundUp: false), false),
+        _ => (string.Empty, false)
+    };
+
+    private static string FormatRemaining(TimeSpan remaining, bool roundUp = true)
+    {
+        if (remaining < TimeSpan.Zero)
+            remaining = TimeSpan.Zero;
+        // Arredonda para cima: com 0,4 s restantes ainda mostra 00:00:01.
+        var total = roundUp ? (int)Math.Ceiling(remaining.TotalSeconds) : (int)Math.Floor(remaining.TotalSeconds);
+        var t = TimeSpan.FromSeconds(total);
+        return t.TotalHours >= 1 ? $"{(int)t.TotalHours:00}:{t.Minutes:00}:{t.Seconds:00}" : $"{t.Minutes:00}:{t.Seconds:00}";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Projection.OnStateChanged -= HandleStateChanged;
+        if (_ticker is not null)
+            await _ticker.DisposeAsync();
+
+        try
+        {
+            await JS.InvokeVoidAsync("projecao.unregisterHotkeys");
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+
+        _selfRef?.Dispose();
+    }
+}

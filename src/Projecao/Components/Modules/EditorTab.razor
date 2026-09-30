@@ -1,0 +1,14 @@
+@* Aba Editor: corrigir louvores ou o texto da Bíblia. *@
+<div class="editor-switch">
+    <div class="segmented" role="tablist">
+        <button class="@(_mode == "songs" ? "active" : null)" @onclick='() => _mode = "songs"'>🎵 Louvores</button>
+        <button class="@(_mode == "bible" ? "active" : null)" @onclick='() => _mode = "bible"'>📖 Bíblia</button>
+    </div>
+</div>
+<div class="editor-body">
+    @if (_mode == "songs") { <SongEditorTab /> } else { <BibleEditorTab /> }
+</div>
+
+@code {
+    private string _mode = "songs";
+}

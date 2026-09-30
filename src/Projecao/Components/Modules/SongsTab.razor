@@ -1,0 +1,202 @@
+@*
+    Módulo Louvores (versão inicial): pesquisa, lista, metadados e slides por estrofe.
+    Clicar num slide prepara o louvor; se ele já estiver no ar, salta para esse slide.
+*@
+@implements IDisposable
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject ProjectionService Projection
+@inject MediaLibraryService Media
+@inject SongService SongStore
+@inject ILogger<SongsTab> Logger
+
+@{
+    var state = Projection.State;
+    var isLive = _selected is not null && state.CurrentItem is { Kind: ProjectionContentKind.Song } cur && cur.SourceId == _selected.Id;
+}
+
+<div class="songs">
+    <div class="search-row">
+        <select @bind="_collection" @bind:after="SearchAsync">
+            <option value="">Todas as coletâneas</option>
+            @foreach (var c in _collections)
+            {
+                <option value="@c">@c</option>
+            }
+        </select>
+        <input type="search" placeholder="Procurar: nº, CIAS 12 ou nome…" @bind="_query" @bind:event="oninput" @bind:after="SearchAsync" />
+        <label><input type="checkbox" @bind="_inLyrics" @bind:after="SearchAsync" /> Procurar dentro da letra</label>
+        <button @onclick="OpenImport" title="Letras em TXT, planilha CSV (Excel/LibreOffice) ou OpenLyrics (OpenLP)">📥 Importar</button>
+    </div>
+
+    @if (_showImport)
+    {
+        <SongImportPanel Collections="_collections" OnClose="() => _showImport = false" OnImported="ReloadAfterImportAsync" />
+    }
+
+    <div class="body">
+        <div class="list">
+            <table class="grid">
+                <thead><tr><th>Nº 1</th><th>Nº 2</th><th>Nome do Louvor</th></tr></thead>
+                <tbody>
+                    <Virtualize Items="_songs" ItemSize="32" SpacerElement="tr" OverscanCount="20" Context="song">
+                        <tr @key="song.Id" class="@(song.Id == _selected?.Id ? "selected" : null)" @onclick="() => SelectSong(song)">
+                            <td class="num">@song.DisplayNumber</td>
+                            <td class="num">@song.AltNumber</td>
+                            <td>@song.Title</td>
+                        </tr>
+                    </Virtualize>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="detail">
+            @if (_selected is null)
+            {
+                <p class="placeholder">Selecione um louvor.</p>
+            }
+            else
+            {
+                <div class="song-head">
+                    <div class="song-title">
+                        <h3>@(_selected.Number is { } n ? $"{n} · " : "")@_selected.Title</h3>
+                        <div class="chips">
+                            @if (_selected.Collection is { } c) { <span class="chip">@c</span> }
+                            @if (_selected.MusicalKey is { } k) { <span class="chip">Tom @k</span> }
+                            @if (_selected.Rhythm is { } r) { <span class="chip">@r</span> }
+                            @if (_selected.Author is { } a) { <span class="chip">@a</span> }
+                            @if (_selected.Category is { } cat) { <span class="chip">@cat</span> }
+                            <span class="chip muted">@_item!.Slides.Count slides</span>
+                        </div>
+                    </div>
+                    <div class="song-actions">
+                        <button class="btn-queue" @onclick="() => Projection.Enqueue(_item!)" title="Põe no fim da fila de exibição">＋ Fila</button>
+                        <button class="primary" @onclick="() => ProjectFrom(_slideIndex)" title="Projeta já a partir do slide selecionado">▶ Projetar @(_slideIndex > 0 ? $"do slide {_slideIndex + 1}" : "")</button>
+                    </div>
+                </div>
+
+                <div class="slides">
+                    @for (var i = 0; i < _item!.Slides.Count; i++)
+                    {
+                        var index = i;
+                        var classes = index == _slideIndex ? "selected" : null;
+                        if (isLive && state.CurrentSlideIndex == index) classes += " live";
+                        <div class="slide-card @classes" @onclick="() => ClickSlide(index)" @ondblclick="() => ProjectFrom(index)">
+                            <small>Slide @(index + 1)</small><SlideText Text="@_item.Slides[index].Text" />
+                        </div>
+                    }
+                </div>
+
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<Song> _songs = [];
+    private List<string> _collections = [];
+    private string _collection = string.Empty;
+    private string _query = string.Empty;
+    private bool _inLyrics;
+    private Song? _selected;
+    private QueueItem? _item;
+    private int _slideIndex;
+    private CancellationTokenSource? _searchCts;
+    private bool _showImport;
+
+    private void OpenImport() => _showImport = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Projection.OnStateChanged += HandleStateChanged;
+        SongStore.SongsChanged += HandleSongsChanged;
+        await LoadCollectionsAsync();
+        await SearchAsync();
+    }
+
+    private async Task ReloadAfterImportAsync()
+    {
+        await LoadCollectionsAsync();
+        await SearchAsync();
+    }
+
+    private async Task LoadCollectionsAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _collections = await db.Songs.AsNoTracking()
+            .Where(s => s.Collection != null)
+            .Select(s => s.Collection!)
+            .Distinct()
+            .OrderBy(c => c)
+            .ToListAsync();
+    }
+
+    /// <summary>Pesquisa com debounce (200 ms) e cancelamento da consulta anterior.</summary>
+    private async Task SearchAsync()
+    {
+        _searchCts?.Cancel();
+        var cts = _searchCts = new CancellationTokenSource();
+
+        try
+        {
+            await Task.Delay(200, cts.Token);
+            await using var db = await DbFactory.CreateDbContextAsync(cts.Token);
+
+            var q = db.Songs.AsNoTracking();
+            if (!string.IsNullOrEmpty(_collection))
+                q = q.Where(s => s.Collection == _collection);
+
+            q = await SongSearch.FilterAsync(db, q, _query, _inLyrics, cts.Token);
+
+            _songs = await q.OrderBy(s => s.Collection).ThenBy(s => s.Number).ThenBy(s => s.Title)
+                .Take(100_000)
+                .ToListAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Nova tecla premida — esta pesquisa já não interessa.
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Falha na pesquisa de louvores");
+        }
+    }
+
+    private void SelectSong(Song song)
+    {
+        _selected = song;
+        _item = QueueItemFactory.FromSong(song, Media.Resolve(song.BackgroundFile), Media.Resolve(song.FirstSlideBackgroundFile));
+        _slideIndex = 0;
+        Projection.Stage(_item);
+    }
+
+    private void ClickSlide(int index)
+    {
+        _slideIndex = index;
+
+        // Se este louvor já está no ar, o clique navega diretamente (como no Glorifica).
+        if (Projection.State.CurrentItem is { Kind: ProjectionContentKind.Song } cur && cur.SourceId == _selected?.Id)
+            Projection.GoToSlide(index);
+    }
+
+    private void ProjectFrom(int index)
+    {
+        if (_item is null)
+            return;
+
+        // Reutiliza o item já na fila (mesmo louvor) em vez de o duplicar.
+        var existing = Projection.State.Queue.FirstOrDefault(q => q.Kind == ProjectionContentKind.Song && q.SourceId == _item.SourceId);
+        Projection.ProjectNow(existing ?? _item, index);
+    }
+
+    private void HandleStateChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void HandleSongsChanged() => _ = InvokeAsync(async () => { await ReloadAfterImportAsync(); StateHasChanged(); });
+
+    public void Dispose()
+    {
+        Projection.OnStateChanged -= HandleStateChanged;
+        SongStore.SongsChanged -= HandleSongsChanged;
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+    }
+}

@@ -1,0 +1,293 @@
+@*
+    Módulo Avisos (como no Glorifica): selecione o texto e aplique Tamanho, Atributos,
+    Fonte, Cor, Cor de fundo e Alinhamento. Botões: modelo, limpar, atualizar, abrir, salvar.
+*@
+@implements IAsyncDisposable
+@inject NoticeService Notices
+@inject ProjectionService Projection
+@inject GalleryService Gallery
+@inject IJSRuntime JS
+@inject ILogger<NoticesTab> Logger
+
+<div class="notices">
+    <div class="format-bar">
+        <label>Tamanho
+            <select @onchange="OnSize">
+                <option value="">—</option>
+                @foreach (var (label, em) in Sizes) { <option value="@em">@label</option> }
+            </select>
+        </label>
+        <label>Atributos
+            <select @onchange="OnAttribute">
+                <option value="">—</option>
+                <option value="bold">Negrito</option>
+                <option value="italic">Itálico</option>
+                <option value="underline">Sublinhado</option>
+                <option value="removeFormat">Limpar formatação</option>
+            </select>
+        </label>
+        <label>Fonte
+            <select @onchange="OnFont">
+                <option value="">—</option>
+                @foreach (var f in Fonts) { <option value="@f" style="font-family:'@f'">@f</option> }
+            </select>
+        </label>
+        <label>Cor
+            <select @onchange="OnColor">
+                <option value="">—</option>
+                @foreach (var (name, hex) in Colors) { <option value="@hex">@name</option> }
+            </select>
+        </label>
+        <label>Cor de fundo
+            <select @onchange="OnBackColor">
+                <option value="">—</option>
+                <option value="transparent">Nenhuma</option>
+                @foreach (var (name, hex) in Colors) { <option value="@hex">@name</option> }
+            </select>
+        </label>
+        <label>Alinhamento
+            <select @onchange="OnAlign">
+                <option value="">—</option>
+                <option value="justifyLeft">Esquerda</option>
+                <option value="justifyCenter">Centro</option>
+                <option value="justifyRight">Direita</option>
+                <option value="justifyFull">Justificado</option>
+            </select>
+        </label>
+    </div>
+
+    <fieldset class="editor-frame">
+        <legend>Selecione o texto e depois escolha a formatação acima</legend>
+        <div class="editor" contenteditable="true" spellcheck="true" @ref="_editor"></div>
+    </fieldset>
+
+    <div class="notice-actions">
+        <button class="btn-model" @onclick="() => ShowSave(asTemplate: true)">＋ modelo</button>
+        <button class="danger" @onclick="ClearAsync">🧹 limpar</button>
+        <button class="btn-update" @onclick="UpdateProjector" title="Envia o aviso para o projetor (ou atualiza o que está no ar)">⟳ atualizar</button>
+        <span class="spacer"></span>
+        <label class="bg-choice">Fundo:
+            <select @bind="_backColor">
+                <option value="">Galeria</option>
+                @foreach (var (name, hex) in Colors) { <option value="@hex">@name</option> }
+            </select>
+        </label>
+        <button class="btn-open" @onclick="ToggleOpenAsync">📂 abrir</button>
+        <button class="btn-save" @onclick="() => ShowSave(asTemplate: false)">💾 salvar</button>
+    </div>
+
+    @if (_saveMode is not null)
+    {
+        <form class="save-row" @onsubmit="SaveAsync">
+            <input @bind="_saveName" placeholder="@(_saveMode == true ? "Nome do modelo" : "Nome do aviso")" autofocus />
+            <button class="primary" type="submit">Guardar @(_saveMode == true ? "modelo" : "aviso")</button>
+            <button type="button" @onclick="() => _saveMode = null">Cancelar</button>
+        </form>
+    }
+
+    @if (_showOpen)
+    {
+        <div class="open-list">
+            @foreach (var (title, list) in new[] { ("Modelos", _templates), ("Avisos guardados", _saved) })
+            {
+                <div>
+                    <div class="col-title">@title</div>
+                    @if (list.Count == 0) { <span class="muted">Nenhum.</span> }
+                    @foreach (var n in list)
+                    {
+                        <div class="open-item">
+                            <button class="link" @onclick="() => OpenAsync(n)">@n.Title</button>
+                            <span class="muted">@n.UpdatedAt.ToLocalTime().ToString("dd/MM HH:mm")</span>
+                            <button class="link danger-link" @onclick="() => DeleteAsync(n)">apagar</button>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    @if (_message is not null)
+    {
+        <p class="notice @(_messageIsError ? "error" : null)">@_message</p>
+    }
+
+    <div class="notice-bottom">
+        <div class="muted small">
+            Dica: escreva o aviso, selecione partes do texto para mudar tamanho/cor. O texto é ajustado
+            automaticamente ao ecrã. <b>atualizar</b> projeta o aviso; se já estiver no ar, atualiza-o.
+            @if (_current is not null) { <br /><span>Aberto: <b>@_current.Title</b></span> }
+        </div>
+        <div class="notice-preview" style="@PreviewBackground">
+            <div class="preview-text">@((MarkupString)NoticeService.Sanitize(_html))</div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private static readonly (string Label, string Em)[] Sizes =
+        [("Muito pequeno", "0.5"), ("Pequeno", "0.75"), ("Normal", "1"), ("Grande", "1.4"), ("Muito grande", "1.8"), ("Enorme", "2.4")];
+
+    private static readonly string[] Fonts =
+        ["Arial", "Calibri", "Franklin Gothic Medium", "Georgia", "Times New Roman", "Verdana", "Consolas", "Impact", "Noto Sans", "Noto Serif"];
+
+    private static readonly (string Name, string Hex)[] Colors =
+    [
+        ("Branco", "#ffffff"), ("Amarelo", "#ffff00"), ("Dourado", "#f7d868"), ("Laranja", "#ffa500"), ("Vermelho", "#ff3b30"),
+        ("Verde", "#22c55e"), ("Azul claro", "#60a5fa"), ("Azul", "#1d4ed8"), ("Azul escuro", "#0b1f4d"), ("Cinza", "#9ca3af"), ("Preto", "#000000")
+    ];
+
+    private ElementReference _editor;
+    private DotNetObjectReference<NoticesTab>? _selfRef;
+    private string _html = string.Empty;
+    private string _backColor = string.Empty;
+    private Projecao.Models.Notice? _current;
+    private Guid? _projectedItemId;
+    private bool? _saveMode;
+    private string _saveName = string.Empty;
+    private bool _showOpen;
+    private IReadOnlyList<Projecao.Models.Notice> _templates = [], _saved = [];
+    private string? _message;
+    private bool _messageIsError;
+
+    private string PreviewBackground
+    {
+        get
+        {
+            if (CssSafe.Color(_backColor) is { } c) return $"background:{c}";
+            var bg = Gallery.GetBackground(BackgroundSlot.Slides);
+            return bg is { IsVideo: false } ? $"background-image:url('{bg.Url}')" : "background:#1d3a6b";
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _selfRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("projecao.editorInit", _editor, _selfRef, _html);
+    }
+
+    [JSInvokable]
+    public Task OnEditorChanged(string html)
+    {
+        _html = html;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task Apply(ChangeEventArgs e, Func<string, ValueTask> action)
+    {
+        if (e.Value?.ToString() is { Length: > 0 } v)
+            await action(v);
+    }
+
+    private Task OnSize(ChangeEventArgs e) => Apply(e, v => JS.InvokeVoidAsync("projecao.editorFontSize", _editor, v));
+
+    private Task OnFont(ChangeEventArgs e) => Apply(e, v => JS.InvokeVoidAsync("projecao.editorExec", _editor, "fontName", v));
+
+    private Task OnColor(ChangeEventArgs e) => Apply(e, v => JS.InvokeVoidAsync("projecao.editorExec", _editor, "foreColor", v));
+
+    private Task OnBackColor(ChangeEventArgs e) => Apply(e, v => JS.InvokeVoidAsync("projecao.editorExec", _editor, "hiliteColor", v));
+
+    private Task OnAttribute(ChangeEventArgs e) => Apply(e, v => JS.InvokeVoidAsync("projecao.editorExec", _editor, v));
+
+    private Task OnAlign(ChangeEventArgs e) => Apply(e, v => JS.InvokeVoidAsync("projecao.editorExec", _editor, v));
+
+    private async Task ClearAsync()
+    {
+        _html = string.Empty;
+        _current = null;
+        await JS.InvokeVoidAsync("projecao.editorSetHtml", _editor, string.Empty);
+    }
+
+    /// <summary>"atualizar": projeta; se este aviso já estiver na fila, substitui-o no mesmo lugar.</summary>
+    private void UpdateProjector()
+    {
+        if (string.IsNullOrWhiteSpace(StripTags(_html)))
+        {
+            Show("Escreva o aviso antes de projetar.", error: true);
+            return;
+        }
+
+        var item = QueueItemFactory.FromNoticeHtml(_current?.Title ?? "Aviso", _html, CssSafe.Color(_backColor), _current?.Id);
+        if (_projectedItemId is { } id && Projection.State.IndexOf(id) >= 0)
+        {
+            item = item with { Id = id };
+            Projection.ReplaceItem(item);
+            Projection.Select(id);
+            Projection.Refresh();
+        }
+        else
+        {
+            Projection.ProjectNow(item);
+            _projectedItemId = item.Id;
+        }
+        Show(Projection.State.IsProjecting ? "Aviso no projetor." : "Aviso pronto na fila — clique em ▶ Projetar para abrir o projetor.");
+    }
+
+    private void ShowSave(bool asTemplate)
+    {
+        _saveMode = asTemplate;
+        _saveName = _current?.IsTemplate == asTemplate ? _current.Title : string.Empty;
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            var asTemplate = _saveMode == true;
+            _current = await Notices.SaveAsync(_saveName, _html, _backColor, asTemplate,
+                id: _current is not null && _current.IsTemplate == asTemplate && _current.Title == _saveName.Trim() ? _current.Id : null);
+            _saveMode = null;
+            Show(asTemplate ? $"Modelo \"{_current.Title}\" guardado." : $"Aviso \"{_current.Title}\" guardado.");
+            if (_showOpen) await LoadListsAsync();
+        }
+        catch (ArgumentException ex)
+        {
+            Show(ex.Message, error: true);
+        }
+    }
+
+    private async Task ToggleOpenAsync()
+    {
+        _showOpen = !_showOpen;
+        if (_showOpen) await LoadListsAsync();
+    }
+
+    private async Task LoadListsAsync()
+    {
+        _templates = await Notices.ListAsync(templates: true);
+        _saved = await Notices.ListAsync(templates: false);
+    }
+
+    private async Task OpenAsync(Projecao.Models.Notice notice)
+    {
+        _current = notice;
+        _html = notice.Content;
+        _backColor = notice.BackColor ?? string.Empty;
+        _projectedItemId = null;
+        _showOpen = false;
+        await JS.InvokeVoidAsync("projecao.editorSetHtml", _editor, _html);
+        Show(notice.IsTemplate ? $"Modelo \"{notice.Title}\" aberto — altere e projete, ou guarde como aviso." : $"Aviso \"{notice.Title}\" aberto.");
+    }
+
+    private async Task DeleteAsync(Projecao.Models.Notice notice)
+    {
+        await Notices.DeleteAsync(notice.Id);
+        if (_current?.Id == notice.Id) _current = null;
+        await LoadListsAsync();
+        Show($"\"{notice.Title}\" apagado.");
+    }
+
+    private void Show(string text, bool error = false)
+    {
+        _message = text;
+        _messageIsError = error;
+    }
+
+    private static string StripTags(string html) => System.Text.RegularExpressions.Regex.Replace(html ?? "", "<[^>]+>|&nbsp;", " ").Trim();
+
+    public ValueTask DisposeAsync()
+    {
+        _selfRef?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

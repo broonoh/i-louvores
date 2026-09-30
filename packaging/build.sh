@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Gera o pacote distribuível: dist/i-louvores-<versão>-<rid>.tar.gz
+#   packaging/build.sh               → linux-x64
+#   packaging/build.sh linux-arm64   → Raspberry Pi 4/5 e outros ARM 64-bit
+#   packaging/build.sh --completo    → inclui os louvores, as versões da Bíblia e a configuração deste PC
+#                                      (dist/i-louvores-<versão>-<rid>-completo.tar.gz — só para uso interno da igreja)
+set -euo pipefail
+
+RID="linux-x64"
+FULL=0
+for arg in "$@"; do
+    case "$arg" in
+        --completo) FULL=1 ;;
+        *) RID="$arg" ;;
+    esac
+done
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VERSION="$(grep -oP '(?<=<Version>)[^<]+' "$ROOT/src/Projecao/Projecao.csproj")"
+NAME="i-louvores-$VERSION-$RID"
+(( FULL )) && NAME="$NAME-completo"
+OUT="$ROOT/dist/$NAME"
+
+rm -rf "$OUT" "$ROOT/dist/$NAME.tar.gz"
+mkdir -p "$OUT"
+
+# Self-contained: inclui o runtime .NET — o utilizador não precisa de instalar .NET.
+dotnet publish "$ROOT/src/Projecao/Projecao.csproj" \
+    -c Release -r "$RID" --self-contained true \
+    -p:DebugType=none -p:InvariantGlobalization=false \
+    -o "$OUT/app"
+
+cp "$ROOT/packaging/install.sh" "$ROOT/packaging/i-louvores.desktop" "$OUT/"
+cp -r "$ROOT/packaging/icons" "$OUT/"
+
+if (( FULL )); then
+    DATA="${XDG_DATA_HOME:-$HOME/.local/share}/i-louvores"
+    [[ -f "$DATA/i-louvores.db" ]] || { echo "Não há dados em $DATA"; exit 1; }
+    command -v sqlite3 >/dev/null || { echo "Precisa do sqlite3 (ex.: sudo dnf install sqlite)"; exit 1; }
+    mkdir -p "$OUT/dados"
+    # .backup: cópia consistente mesmo com o I-LOUVORES aberto (WAL)
+    sqlite3 "$DATA/i-louvores.db" ".backup '$OUT/dados/i-louvores.db'"
+    sqlite3 "$OUT/dados/i-louvores.db" "VACUUM;"
+    [[ -f "$DATA/config.json" ]] && cp "$DATA/config.json" "$OUT/dados/"
+    DOCS="$(xdg-user-dir DOCUMENTS 2>/dev/null || echo "$HOME/Documents")/I-LOUVORES/Galeria"
+    [[ -d "$DOCS" ]] && cp -r "$DOCS" "$OUT/dados/Galeria"
+    echo "Dados incluídos: $(sqlite3 "$OUT/dados/i-louvores.db" "select count(*) from Songs") louvores;" \
+         "Bíblias: $(sqlite3 "$OUT/dados/i-louvores.db" "select group_concat(Abbreviation, ', ') from BibleVersions")"
+fi
+tar -C "$ROOT/dist" -czf "$ROOT/dist/$NAME.tar.gz" "$NAME"
+echo "Pacote: dist/$NAME.tar.gz ($(du -h "$ROOT/dist/$NAME.tar.gz" | cut -f1))"

@@ -1,0 +1,173 @@
+@*
+    Cópia de segurança / transferir o I-LOUVORES para outro computador.
+*@
+@inject BackupService Backup
+@inject GalleryService Gallery
+@inject Microsoft.Extensions.Hosting.IHostApplicationLifetime Lifetime
+@inject ILogger<DataPanel> Logger
+
+<div class="data-panel">
+    <div class="import-header">
+        <h3>Dados do I-LOUVORES</h3>
+        <button class="link" @onclick="OnClose">fechar</button>
+    </div>
+
+    <section>
+        <h4>📤 Exportar (cópia de segurança / levar para outro computador)</h4>
+        <p class="muted">Cria um ficheiro .zip com os louvores, as versões da Bíblia, os avisos e as configurações.</p>
+        <label class="check"><input type="checkbox" @bind="_includeGallery" /> Incluir a Galeria (imagens e vídeos — fica maior)</label>
+        <div class="row">
+            <button class="primary" disabled="@_busy" @onclick="ExportAsync">@(_busy && _exporting ? "A exportar…" : "Exportar agora")</button>
+            @if (_exported is not null)
+            {
+                <button @onclick="OpenFolder">📂 Abrir pasta</button>
+            }
+        </div>
+        @if (_exported is not null)
+        {
+            <p class="notice">✔ @Path.GetFileName(_exported.FilePath) (@(_exported.SizeBytes / 1024 / 1024) MB) —
+                @_exported.Manifest.Songs louvores · Bíblias: @string.Join(", ", _exported.Manifest.BibleVersions)
+                @(_exported.Manifest.IncludesGallery ? $" · {_exported.Manifest.GalleryFiles} ficheiros da Galeria" : "")
+                <br /><span class="muted">@_exported.FilePath</span></p>
+        }
+    </section>
+
+    <section>
+        <h4>📥 Importar (noutro computador, ou para restaurar)</h4>
+        <p class="muted">Substitui os louvores, Bíblias, avisos e configurações por os da cópia. A base atual fica guardada
+            ao lado, por segurança. É aplicado ao reiniciar o I-LOUVORES.</p>
+        <label class="button @(_busy ? "disabled" : null)">
+            Escolher cópia (.zip)…
+            <InputFile OnChange="OnImportSelected" accept=".zip" disabled="@_busy" />
+        </label>
+        @if (_restore is not null)
+        {
+            <p class="notice">Pronto a aplicar: @_restore.Songs louvores · Bíblias: @string.Join(", ", _restore.BibleVersions)
+                · criada em @_restore.CreatedUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm").</p>
+            <div class="row">
+                <button class="primary" @onclick="RestartNow">⟳ Reiniciar agora e aplicar</button>
+                <button @onclick="CancelRestore">Cancelar</button>
+            </div>
+        }
+    </section>
+
+    @if (_error is not null)
+    {
+        <p class="notice error">@_error</p>
+    }
+
+    <p class="muted small">Atenção aos direitos: versões como ARC, ARA, ACF e KJF têm direitos de autor (SBB, SBTB, BV Books).
+        Ao passar a cópia a outra pessoa, confirme que a igreja tem direito de uso dessas versões.</p>
+</div>
+
+@code {
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private bool _includeGallery = true;
+    private bool _busy, _exporting;
+    private BackupResult? _exported;
+    private BackupManifest? _restore;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        if (Backup.HasPendingRestore)
+            _error = "Há uma importação à espera de reinício. Clique em Importar de novo ou reinicie o I-LOUVORES.";
+    }
+
+    private async Task ExportAsync()
+    {
+        _busy = _exporting = true;
+        _error = null;
+        try
+        {
+            _exported = await Task.Run(() => Backup.ExportAsync(_includeGallery));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Falha a exportar");
+            _error = $"Não foi possível exportar: {ex.Message}";
+        }
+        finally
+        {
+            _busy = _exporting = false;
+        }
+    }
+
+    private async Task OnImportSelected(InputFileChangeEventArgs e)
+    {
+        _busy = true;
+        _error = null;
+        _restore = null;
+        try
+        {
+            // Copia para um ficheiro temporário (pode ter vídeos grandes) e valida.
+            var temp = Path.Combine(Path.GetTempPath(), $"i-louvores-import-{Guid.NewGuid():N}.zip");
+            try
+            {
+                await using (var input = e.File.OpenReadStream(maxAllowedSize: 4L * 1024 * 1024 * 1024))
+                await using (var output = File.Create(temp))
+                    await input.CopyToAsync(output);
+
+                await using var zip = File.OpenRead(temp);
+                _restore = await Backup.PrepareRestoreAsync(zip);
+            }
+            finally
+            {
+                if (File.Exists(temp)) File.Delete(temp);
+            }
+        }
+        catch (InvalidDataException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Falha a importar cópia");
+            _error = $"Não foi possível ler a cópia: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void CancelRestore()
+    {
+        Backup.CancelPendingRestore();
+        _restore = null;
+    }
+
+    /// <summary>Abre um novo I-LOUVORES (que espera este fechar) e fecha este.</summary>
+    private void RestartNow()
+    {
+        try
+        {
+            var exe = Path.Combine(AppContext.BaseDirectory, "i-louvores");
+            var psi = new System.Diagnostics.ProcessStartInfo(File.Exists(exe) ? exe : Environment.ProcessPath!) { UseShellExecute = false };
+            if (!File.Exists(exe)) psi.ArgumentList.Add(typeof(DataPanel).Assembly.Location);
+            psi.ArgumentList.Add("--aguardar-pid");
+            psi.ArgumentList.Add(Environment.ProcessId.ToString());
+            System.Diagnostics.Process.Start(psi);
+            Lifetime.StopApplication();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Feche e volte a abrir o I-LOUVORES para aplicar ({ex.Message}).";
+        }
+    }
+
+    private void OpenFolder()
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("xdg-open") { UseShellExecute = false };
+            psi.ArgumentList.Add(Backup.BackupFolder);
+            System.Diagnostics.Process.Start(psi)?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Pasta: {Backup.BackupFolder} ({ex.Message})";
+        }
+    }
+}

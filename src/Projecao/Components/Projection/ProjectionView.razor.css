@@ -1,0 +1,173 @@
+/* Ecrã do projetor: tudo em unidades de viewport para escalar com qualquer resolução. */
+.stage {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    color: #fff;
+    overflow: hidden;
+    cursor: none;
+    user-select: none;
+    font-family: "Segoe UI", "Noto Sans", Cantarell, "DejaVu Sans", system-ui, sans-serif;
+}
+
+.bg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    animation: fade-in .4s ease;
+}
+
+.bg-default {
+    background: radial-gradient(ellipse at center, #1d3a6b 0%, #0b1733 70%, #050a18 100%);
+}
+
+/*
+ * Áreas de texto — coordenadas dos modelos do Glorifica (Config.ini, base 1920x1080),
+ * em percentagem para funcionar em qualquer resolução (projetor 1024x768, TV 4K…).
+ * --safe-x/--safe-y = margem de overscan da TV.
+ */
+.layout { position: absolute; inset: 0; animation: fade-in .35s ease; }
+
+.slide, .heading-box {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* Glorifica: ForcarAlinhamentoHorizontalCentro=1 / VerticalCentro=1 */
+.slide { text-align: center; }
+
+/* Slides seguintes (LouvorCoord2: 48,20 → 1871,1031) */
+.layout-full .slide {
+    left: calc(2.5% + var(--safe-x, 0vw)); right: calc(2.55% + var(--safe-x, 0vw));
+    top: calc(1.85% + var(--safe-y, 0vh)); bottom: calc(4.55% + var(--safe-y, 0vh));
+}
+
+/* 1.º slide do louvor: título na faixa (277,20 → 1794,130), letra (41,158 → 1849,1028) */
+.layout-song-first .heading-box {
+    left: 14.43%; right: calc(6.56% + var(--safe-x, 0vw));
+    top: calc(1.85% + var(--safe-y, 0vh)); height: 10.2%;
+}
+.layout-song-first .slide {
+    left: calc(2.14% + var(--safe-x, 0vw)); right: calc(3.7% + var(--safe-x, 0vw));
+    top: 14.63%; bottom: calc(4.81% + var(--safe-y, 0vh));
+}
+
+/* Bíblia: referência na faixa (279,177 → 1851,286), versículo (88,310 → 1788,1026) */
+.layout-bible .heading-box {
+    left: 14.53%; right: calc(3.59% + var(--safe-x, 0vw));
+    top: 16.39%; height: 10.1%;
+}
+.layout-bible .slide {
+    left: calc(4.58% + var(--safe-x, 0vw)); right: calc(6.88% + var(--safe-x, 0vw));
+    top: 28.7%; bottom: calc(5% + var(--safe-y, 0vh));
+}
+
+.heading-box { justify-content: center; overflow: hidden; }
+.heading {
+    width: 100%;
+    white-space: nowrap;
+    font-weight: 700;
+    line-height: 1.1;
+    font-size: 6vh;
+    text-shadow: 0 .05em .15em rgba(0, 0, 0, .9);
+}
+.layout-song-first .heading { text-transform: var(--song-transform, uppercase); text-align: center; color: var(--song-title-color, #fff3d6); font-family: var(--song-font); }
+.layout-bible .heading { text-align: left; color: var(--bible-ref-color, #ffff00); font-style: italic; font-family: var(--bible-font); }
+.layout-bible .text { font-family: var(--bible-font); color: var(--bible-color, #fff); font-weight: 500; text-align: var(--bible-align, center); }
+
+.text-box {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.text {
+    width: 100%;
+    white-space: pre-line;          /* respeita as quebras de linha das estrofes */
+    line-height: 1.25;
+    font-weight: 600;
+    font-size: 8vh;                 /* valor inicial; o fitText ajusta */
+    text-shadow: 0 .04em .12em rgba(0, 0, 0, .9), 0 0 .5em rgba(0, 0, 0, .5);
+    overflow-wrap: anywhere;
+}
+
+.caption {
+    flex: 0 0 auto;
+    margin-top: 2vh;
+    font-size: 3.6vh;
+    font-weight: 500;
+    opacity: .9;
+    text-shadow: 0 .05em .15em rgba(0, 0, 0, .9);
+}
+
+/* Avisos: o editor usa tamanhos em "em" para o ajuste automático escalar tudo junto. */
+.text.html { white-space: normal; text-align: left; font-weight: 500; }
+.text.html ::deep p, .text.html ::deep div { margin: 0; }
+
+/*
+ * Letras de louvor (como no Glorifica: Alinhamento_Louvor=left + ForcarAlinhamentoHorizontalCentro=1):
+ * o BLOCO fica centrado no ecrã, mas as linhas alinham à esquerda entre si.
+ * Cada linha da letra nunca é partida — o ajuste automático diminui a fonte até a mais longa caber.
+ */
+.text.markup {
+    width: auto;
+    max-width: 100%;
+    text-align: left;
+    white-space: normal;
+    font-family: var(--song-font);
+    color: var(--song-color, #fff);
+    font-weight: var(--song-weight, 600);
+}
+/* Configuração "cada linha centrada" */
+.stage.song-center .text.markup { width: 100%; text-align: center; }
+.text.markup ::deep .mk-line { white-space: nowrap; }
+
+/* Overlay — Config.ini: Calibri 65 px (em 1280x720), branco, margem 25 */
+.overlay {
+    font-family: Calibri, Carlito, "Noto Sans", sans-serif;
+    position: absolute;
+    top: calc(2.5vh + var(--safe-y, 0vh));
+    right: calc(2.5vw + var(--safe-x, 0vw));
+    padding: .25em .6em;
+    font-size: 6vh;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    background: rgba(0, 0, 0, .6);
+    border-radius: .25em;
+}
+
+/* Relógio/cronómetro em ecrã inteiro — Config.ini: Consolas 110 px (em 1280x720), cor F7F0D2 */
+.timer-full {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+    font-size: 22vh; font-weight: 700; color: var(--clock-color, #f7f0d2);
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 .03em .12em rgba(0, 0, 0, .8);
+}
+.timer-full.finished { color: #ff4d4d; animation: blink 1s steps(2, start) infinite; }
+
+/* Crédito exigido por licenças CC BY (ex.: BLIVRE): pequeno e discreto no canto */
+.credit {
+    position: absolute;
+    right: calc(1.2vw + var(--safe-x, 0vw));
+    bottom: calc(1vh + var(--safe-y, 0vh));
+    font-size: 1.6vh;
+    letter-spacing: .08em;
+    color: rgba(255, 255, 255, .45);
+    font-family: Arial, "Liberation Sans", sans-serif;
+}
+
+.overlay.finished {
+    color: #ff4d4d;
+    animation: blink 1s steps(2, start) infinite;
+}
+
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes blink { to { visibility: hidden; } }

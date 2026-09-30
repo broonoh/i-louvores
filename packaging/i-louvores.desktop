@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=I-LOUVORES
+GenericName=Projeção de louvores e Bíblia
+Comment=Projeta louvores, passagens bíblicas, avisos e cronómetro num projetor ou TV
+Exec=@EXEC@
+Icon=i-louvores
+Terminal=false
+Categories=Office;Presentation;
+Keywords=louvor;louvores;bíblia;projetor;igreja;slides;glorifica;
+StartupWMClass=i-louvores

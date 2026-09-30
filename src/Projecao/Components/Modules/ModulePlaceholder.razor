@@ -1,0 +1,10 @@
+<div class="placeholder">
+    <h3>@Name</h3>
+    <p>@Description</p>
+    <p><em>Módulo a implementar no próximo passo.</em></p>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = string.Empty;
+    [Parameter] public string? Description { get; set; }
+}

@@ -1,0 +1,13 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.db
+*.db-shm
+*.db-wal
+
+# Dados de terceiros (Glorifica) — não versionar
+*.xbY
+Pasta Louvores*.zip
+dist/

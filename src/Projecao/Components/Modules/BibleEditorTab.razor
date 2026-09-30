@@ -1,0 +1,219 @@
+@*
+    Correção do texto bíblico: versão → livro → capítulo (ou procurar a palavra errada),
+    editar os versículos e salvar. Leituras desse capítulo no telão atualizam na hora.
+*@
+@inject BibleService Bible
+@inject ILogger<BibleEditorTab> Logger
+
+<div class="bible-editor">
+    <div class="be-toolbar">
+        <select @onchange="OnVersionChanged" title="Versão">
+            @foreach (var v in _versions)
+            {
+                <option value="@v.Id" selected="@(v.Id == _versionId)">@v.Abbreviation — @v.Name</option>
+            }
+        </select>
+        <select @onchange="OnBookChanged" title="Livro">
+            @foreach (var b in _books)
+            {
+                <option value="@b.Id" selected="@(b.Id == _bookId)">@b.Name</option>
+            }
+        </select>
+        <select @onchange="OnChapterChanged" title="Capítulo">
+            @for (var c = 1; c <= _chapterCount; c++)
+            {
+                <option value="@c" selected="@(c == _chapter)">Capítulo @c</option>
+            }
+        </select>
+        <form class="be-search" @onsubmit="SearchAsync">
+            <input @bind="_search" placeholder="Procurar texto errado nesta versão…" />
+            <button type="submit">🔍 Procurar</button>
+        </form>
+    </div>
+
+    @if (_pending is not null)
+    {
+        <div class="notice warn-box">
+            Tem @_edits.Count alteração(ões) por guardar neste capítulo.
+            <button class="primary" @onclick="SaveThenContinueAsync">Guardar</button>
+            <button class="danger" @onclick="DiscardThenContinueAsync">Descartar</button>
+            <button @onclick="() => _pending = null">Cancelar</button>
+        </div>
+    }
+
+    @if (_results is not null)
+    {
+        <div class="be-results">
+            <div class="col-title">@_results.Count resultado(s) para "@_lastSearch" @(_results.Count >= 200 ? "(mostrando os primeiros 200)" : "")
+                <button class="link" @onclick="() => _results = null">fechar</button></div>
+            @foreach (var r in _results)
+            {
+                <button class="be-result" @onclick="() => RequestGoTo(r.BookId, r.Chapter, r.Verse)">
+                    <b>@BookName(r.BookId) @r.Chapter:@r.Verse</b> @Highlight(r.Text)
+                </button>
+            }
+        </div>
+    }
+
+    @if (_message is not null)
+    {
+        <p class="notice @(_messageIsError ? "error" : null)">@_message</p>
+    }
+
+    <div class="be-verses">
+        @foreach (var v in _verses)
+        {
+            var verse = v;
+            var edited = _edits.TryGetValue(verse.Id, out var current);
+            <div class="be-verse @(edited ? "edited" : null) @(verse.Verse == _focusVerse ? "focus" : null)" id="@($"be-v{verse.Verse}")">
+                <span class="be-num">@verse.Verse</span>
+                <textarea rows="@Rows(edited ? current! : verse.Text)" spellcheck="true"
+                          value="@(edited ? current : verse.Text)" @oninput="e => OnEdit(verse, e.Value?.ToString())"></textarea>
+                @if (edited)
+                {
+                    <button class="be-undo" title="Repor o texto original" @onclick="() => _edits.Remove(verse.Id)">↺</button>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="editor-actions">
+        <button class="primary" disabled="@(_edits.Count == 0 || _busy)" @onclick="SaveAsync">💾 Salvar alterações @(_edits.Count > 0 ? $"({_edits.Count})" : "")</button>
+        <button disabled="@(_edits.Count == 0)" @onclick="() => _edits.Clear()">Descartar</button>
+        <span class="muted small">Os versículos alterados ficam marcados a amarelo até salvar.</span>
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<BibleVersionInfo> _versions = [];
+    private IReadOnlyList<Projecao.Models.BibleBook> _books = [];
+    private IReadOnlyList<Projecao.Models.BibleVerse> _verses = [];
+    private readonly Dictionary<int, string> _edits = [];
+    private int? _versionId;
+    private int _bookId = 1, _chapter = 1, _chapterCount;
+    private int? _focusVerse;
+    private string _search = string.Empty, _lastSearch = string.Empty;
+    private IReadOnlyList<Projecao.Models.BibleVerse>? _results;
+    private Func<Task>? _pending;
+    private bool _busy;
+    private string? _message;
+    private bool _messageIsError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _versions = await Bible.GetVersionsAsync();
+        _books = await Bible.GetBooksAsync();
+        _versionId = _versions.FirstOrDefault()?.Id;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _edits.Clear();
+        if (_versionId is not { } vid) { _verses = []; return; }
+        _chapterCount = await Bible.GetChapterCountAsync(vid, _bookId);
+        _chapter = Math.Clamp(_chapter, 1, Math.Max(1, _chapterCount));
+        _verses = await Bible.GetChapterAsync(vid, _bookId, _chapter);
+    }
+
+    // Mudar de versão/livro/capítulo com alterações por guardar pergunta primeiro.
+    private Task Guard(Func<Task> action)
+    {
+        if (_edits.Count > 0) { _pending = action; return Task.CompletedTask; }
+        return action();
+    }
+
+    private Task OnVersionChanged(ChangeEventArgs e) => Guard(async () =>
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id)) { _versionId = id; _results = null; await LoadAsync(); }
+    });
+
+    private Task OnBookChanged(ChangeEventArgs e) => Guard(async () =>
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id)) { _bookId = id; _chapter = 1; _focusVerse = null; await LoadAsync(); }
+    });
+
+    private Task OnChapterChanged(ChangeEventArgs e) => Guard(async () =>
+    {
+        if (int.TryParse(e.Value?.ToString(), out var c)) { _chapter = c; _focusVerse = null; await LoadAsync(); }
+    });
+
+    private Task RequestGoTo(int book, int chapter, int verse) => Guard(async () =>
+    {
+        _bookId = book; _chapter = chapter; _focusVerse = verse;
+        await LoadAsync();
+    });
+
+    private async Task SaveThenContinueAsync()
+    {
+        var next = _pending; _pending = null;
+        await SaveAsync();
+        if (next is not null && _edits.Count == 0) await next();
+    }
+
+    private async Task DiscardThenContinueAsync()
+    {
+        var next = _pending; _pending = null;
+        _edits.Clear();
+        if (next is not null) await next();
+    }
+
+    private async Task SearchAsync()
+    {
+        if (_versionId is not { } vid) return;
+        _lastSearch = _search.Trim();
+        _results = _lastSearch.Length < 2 ? [] : await Bible.SearchTextAsync(vid, _lastSearch);
+    }
+
+    private void OnEdit(Projecao.Models.BibleVerse verse, string? text)
+    {
+        text ??= string.Empty;
+        if (text == verse.Text) _edits.Remove(verse.Id);
+        else _edits[verse.Id] = text;
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        try
+        {
+            var count = await Bible.UpdateVersesAsync(new Dictionary<int, string>(_edits));
+            var where = $"{BookName(_bookId)} {_chapter} ({_versions.FirstOrDefault(v => v.Id == _versionId)?.Abbreviation})";
+            await LoadAsync();
+            Show($"✔ {count} versículo(s) corrigido(s) em {where}. Se estiver no telão, já mostra a correção.");
+            if (_results is not null && _lastSearch.Length >= 2) await SearchAsync();
+        }
+        catch (ArgumentException ex)
+        {
+            Show(ex.Message, error: true);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Falha a guardar versículos");
+            Show($"Não foi possível guardar: {ex.Message}", error: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private string BookName(int id) => _books.FirstOrDefault(b => b.Id == id)?.Name ?? $"Livro {id}";
+
+    private static int Rows(string text) => Math.Clamp(text.Length / 95 + 1, 1, 6);
+
+    private MarkupString Highlight(string text)
+    {
+        var encoded = System.Net.WebUtility.HtmlEncode(text);
+        if (_lastSearch.Length < 2) return (MarkupString)encoded;
+        var term = System.Net.WebUtility.HtmlEncode(_lastSearch);
+        return (MarkupString)System.Text.RegularExpressions.Regex.Replace(encoded, System.Text.RegularExpressions.Regex.Escape(term),
+            m => $"<mark>{m.Value}</mark>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    }
+
+    private void Show(string text, bool error = false)
+    {
+        _message = text;
+        _messageIsError = error;
+    }
+}

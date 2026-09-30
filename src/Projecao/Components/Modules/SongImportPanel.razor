@@ -1,0 +1,271 @@
+@*
+    Importador de louvores: escolher ficheiros → pré-visualizar → importar (transação única).
+*@
+@inject SongImporter Importer
+@inject BackupService Backup
+@inject ILogger<SongImportPanel> Logger
+
+<div class="import-panel">
+    <div class="import-header">
+        <h3>Importar louvores</h3>
+        <button class="link" @onclick="OnClose">fechar</button>
+    </div>
+
+    <div class="import-options">
+        <label class="button primary @(_busy ? "disabled" : null)">
+            📄 Escolher ficheiros…
+            <InputFile OnChange="OnFilesSelected" multiple accept=".txt,.csv,.xml,.ini,.pptx" disabled="@_busy" />
+        </label>
+
+        <label class="field">
+            <span>Coletânea (para louvores sem coletânea no ficheiro)</span>
+            <input list="collections" @bind="_collection" @bind:after="ReplanAsync" placeholder="ex.: Avulsos, Coletânea 2018" />
+            <datalist id="collections">
+                @foreach (var c in Collections) { <option value="@c"></option> }
+            </datalist>
+        </label>
+
+        <label class="check" title="Quando a versão do ficheiro for diferente da que já existe, substitui (com cópia de segurança antes)">
+            <input type="checkbox" @bind="_updateExisting" @bind:after="ReplanAsync" /> Atualizar: substituir louvores que já existem</label>
+        <label class="check" title="Um .txt por louvor, título = nome do ficheiro (pasta Louvores/raw do Glorifica)">
+            <input type="checkbox" @bind="_glorificaMode" /> Formato Glorifica (título = nome do ficheiro)
+        </label>
+    </div>
+
+    <details class="formats">
+        <summary>Formatos aceites (TXT, CSV, OpenLyrics)</summary>
+        <div class="formats-body">
+            <p><b>TXT</b>: um louvor por ficheiro, ou vários separados por uma linha <code>---</code>. Linha em branco = novo slide.
+               O cabeçalho é opcional; sem ele, a 1.ª linha é o título (aceita <code>12 - Título</code>).</p>
+<pre>Título: Nome do louvor
+Número: 12
+Coletânea: Avulsos
+Tom: G
+
+Primeira estrofe, linha 1
+Primeira estrofe, linha 2
+
+Segunda estrofe…
+---
+13 - Outro louvor
+
+Letra do outro louvor…</pre>
+            <p><b>CSV</b> (Excel/LibreOffice, separado por <code>;</code> ou <code>,</code>): colunas
+               <code>titulo</code> e <code>letra</code> obrigatórias; opcionais <code>numero</code>, <code>numero2</code>,
+               <code>coletanea</code>, <code>autor</code>, <code>categoria</code>, <code>tom</code>, <code>ritmo</code>.</p>
+            <p><b>PowerPoint (.pptx)</b>: apresentações de coletâneas — cada louvor começa num slide com o título no topo
+               ("01 – TÍTULO"); a letra de cada slide vira um slide. BIS/2X e VARÕES/SERVAS ao lado da letra são mantidos.</p>
+            <p><b>OpenLyrics (.xml)</b>: exportado do OpenLP e de outros programas de projeção; respeita a ordem de execução (refrão repetido).</p>
+            <p class="muted">Os ficheiros PT_*.xbY do Glorifica são cifrados e não podem ser lidos. Copie as letras para TXT.</p>
+        </div>
+    </details>
+
+    @if (_status is not null)
+    {
+        <p class="notice @(_statusIsError ? "error" : null)">@_status</p>
+    }
+
+    @if (_issues.Count > 0)
+    {
+        <details class="issues" open="@(_plan.Count == 0)">
+            <summary>⚠ @_issues.Count aviso(s)</summary>
+            <ul>@foreach (var i in _issues) { <li><b>@i.Source</b>: @i.Message</li> }</ul>
+        </details>
+    }
+
+    @if (_plan.Count > 0)
+    {
+        var sum = ImportSummary.Of(_plan);
+        var visible = (_filter is null ? _plan : _plan.Where(p => p.Action == _filter)).ToList();
+
+        <div class="plan-summary">
+            <button class="pill-ok @(_filter == ImportAction.Create ? "on" : null)" @onclick="() => Toggle(ImportAction.Create)">@sum.Create novo(s)</button>
+            <button class="pill-upd @(_filter == ImportAction.Update ? "on" : null)" @onclick="() => Toggle(ImportAction.Update)">@sum.Update a substituir</button>
+            <button class="pill-skip @(_filter == ImportAction.Unchanged ? "on" : null)" @onclick="() => Toggle(ImportAction.Unchanged)">@sum.Unchanged sem alterações</button>
+            @if (sum.Skip > 0)
+            {
+                <button class="pill-skip @(_filter == ImportAction.Skip ? "on" : null)" @onclick="() => Toggle(ImportAction.Skip)">@sum.Skip ignorado(s)</button>
+            }
+            <span class="spacer"></span>
+            @if (!_confirming)
+            {
+                <button class="primary" disabled="@(_busy || sum.Create + sum.Update == 0)" @onclick="StartImport">
+                    @(sum.Update > 0 ? $"Importar ({sum.Create} novos, {sum.Update} a substituir)…" : $"Importar {sum.Create} louvor(es)")
+                </button>
+            }
+        </div>
+
+        @if (_confirming)
+        {
+            <div class="notice warn-box confirm-box">
+                <b>@sum.Update louvor(es) vão ser substituídos</b> pela versão do ficheiro (clique em "a substituir" acima para os ver).
+                Antes de gravar é feita uma <b>cópia de segurança</b> automática da base — a atualização pode ser desfeita.
+                <div class="row">
+                    <button class="primary" disabled="@_busy" @onclick="ImportAsync">@(_busy ? "A atualizar…" : "Confirmar atualização")</button>
+                    <button @onclick="() => _confirming = false">Cancelar</button>
+                </div>
+            </div>
+        }
+
+        <div class="plan-list">
+            <table class="grid">
+                <thead><tr><th>Estado</th><th>Nº</th><th>Título</th><th>Coletânea</th><th>Slides</th><th>Detalhe</th></tr></thead>
+                <tbody>
+                    <Virtualize Items="visible" ItemSize="31" SpacerElement="tr" Context="p">
+                        <tr class="plan-@p.Action.ToString().ToLowerInvariant()">
+                            <td>@(p.Action switch { ImportAction.Create => "Novo", ImportAction.Update => "Substituir", ImportAction.Unchanged => "Igual", _ => "Ignorar" })</td>
+                            <td class="num">@p.Song.Number</td>
+                            <td>@p.Song.Title</td>
+                            <td>@(p.Collection ?? "—")</td>
+                            <td class="num">@p.Song.StanzaCount</td>
+                            <td class="muted">@(p.Note ?? p.Song.Source)</td>
+                        </tr>
+                    </Virtualize>
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<string> Collections { get; set; } = [];
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnImported { get; set; }
+
+    private readonly List<ImportedSong> _songs = [];
+    private readonly List<ImportIssue> _issues = [];
+    private IReadOnlyList<ImportPlanItem> _plan = [];
+    private string _collection = string.Empty;
+    private bool _updateExisting = true;
+    private bool _confirming;
+    private ImportAction? _filter;
+    private bool _glorificaMode;
+    private bool _busy;
+    private string? _status;
+    private bool _statusIsError;
+
+    private async Task OnFilesSelected(InputFileChangeEventArgs e)
+    {
+        _busy = true;
+        _songs.Clear();
+        _issues.Clear();
+        _plan = [];
+        _status = "A ler ficheiros…";
+
+        try
+        {
+            var files = e.GetMultipleFiles(maximumFileCount: 1000);
+            var loaded = new List<(string Name, byte[] Content)>();
+            foreach (var file in files)
+            {
+                if (file.Size > SongImportParser.MaxFileBytes)
+                {
+                    _issues.Add(new ImportIssue(file.Name, "Ficheiro demasiado grande (máx. 200 MB)."));
+                    continue;
+                }
+
+                using var buffer = new MemoryStream();
+                await using (var stream = file.OpenReadStream(SongImportParser.MaxFileBytes))
+                    await stream.CopyToAsync(buffer);
+
+                loaded.Add((file.Name, buffer.ToArray()));
+            }
+
+            // LouvoresRaw.ini junto dos .txt = pasta raw do Glorifica.
+            var ini = loaded.FirstOrDefault(f => f.Name.Equals("LouvoresRaw.ini", StringComparison.OrdinalIgnoreCase));
+            _glorificaMode |= ini.Content is not null;
+            if (_glorificaMode)
+            {
+                var result = SongImportParser.ParseGlorificaRaw(loaded.Where(f => f.Content != ini.Content), ini.Content);
+                _songs.AddRange(result.Songs);
+                _issues.AddRange(result.Issues);
+            }
+            else
+            {
+                foreach (var (name, content) in loaded)
+                {
+                    var result = SongImportParser.Parse(name, content);
+                    _songs.AddRange(result.Songs);
+                    _issues.AddRange(result.Issues);
+                }
+            }
+
+            // Sugere a coletânea pelo nome do ficheiro (ex.: "PT_Avulsos.txt" → "Avulsos").
+            if (string.IsNullOrWhiteSpace(_collection) && files.Count == 1)
+                _collection = SuggestCollection(files[0].Name);
+
+            await ReplanAsync();
+            _status = _songs.Count == 0 ? "Nenhum louvor encontrado nos ficheiros." : null;
+            _statusIsError = _songs.Count == 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Falha a ler ficheiros de importação");
+            _status = $"Erro ao ler ficheiros: {ex.Message}";
+            _statusIsError = true;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ReplanAsync()
+    {
+        if (_songs.Count > 0)
+            _plan = await Importer.PlanAsync(_songs, _collection, _updateExisting);
+    }
+
+    private void Toggle(ImportAction action) => _filter = _filter == action ? null : action;
+
+    /// <summary>Com substituições pede confirmação primeiro; só novos → importa logo.</summary>
+    private async Task StartImport()
+    {
+        if (ImportSummary.Of(_plan).Update > 0)
+        {
+            _confirming = true;
+            _filter = ImportAction.Update;
+            return;
+        }
+        await ImportAsync();
+    }
+
+    private async Task ImportAsync()
+    {
+        _busy = true;
+        try
+        {
+            string? safety = null;
+            if (ImportSummary.Of(_plan).Update > 0)
+                safety = await Task.Run(() => Backup.CreateSafetyCopy("atualizacao-louvores"));
+
+            var result = await Importer.ApplyAsync(_plan);
+            _confirming = false;
+            _filter = null;
+            _status = $"✔ Importação concluída: {result.Created} novo(s), {result.Updated} substituído(s), {result.Skipped} sem alterações/ignorado(s)."
+                      + (safety is null ? "" : $" Cópia de segurança: {Path.GetFileName(safety)}");
+            _statusIsError = false;
+            _plan = [];
+            _songs.Clear();
+            await OnImported.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Falha na importação");
+            _status = $"A importação falhou e nada foi gravado: {ex.Message}";
+            _statusIsError = true;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string SuggestCollection(string fileName)
+    {
+        var stem = Path.GetFileNameWithoutExtension(fileName);
+        if (stem.StartsWith("PT_", StringComparison.OrdinalIgnoreCase))
+            stem = stem[3..];
+        return stem.Replace('_', ' ').Trim();
+    }
+}

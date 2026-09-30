@@ -1,0 +1,224 @@
+@*
+    Módulo Galeria: fundos (imagens/vídeos) de ~/Documentos/Glorifica/Galeria.
+    Clique = fundo dos slides ("SELECIONADO!"). Botão "1.º slide" = fundo do primeiro
+    slide de cada louvor (a imagem com a faixa "LOUVOR", como no Glorifica).
+*@
+@implements IDisposable
+@inject MediaLibraryService Media
+@inject GalleryService Gallery
+@inject ProjectionService Projection
+@inject ILogger<GalleryTab> Logger
+
+@{
+    var slidesSel = Gallery.GetSelection(BackgroundSlot.Slides);
+    var firstSel = Gallery.GetSelection(BackgroundSlot.FirstSlide);
+    var bibleSel = Gallery.GetSelection(BackgroundSlot.Bible);
+    var generalSel = Gallery.GetSelection(BackgroundSlot.General);
+    var visible = _files.Where(f => _filter switch { "img" => !f.IsVideo, "vid" => f.IsVideo, _ => true }).ToList();
+}
+
+<div class="gallery">
+    @* ---------- Fundos ativos ---------- *@
+    <div class="active-bgs">
+        @foreach (var (slot, label, sel) in new[] { (BackgroundSlot.FirstSlide, "Louvor: 1.º slide", firstSel), (BackgroundSlot.Slides, "Louvor: restantes", slidesSel), (BackgroundSlot.Bible, "Bíblia", bibleSel), (BackgroundSlot.General, "Geral (relógio)", generalSel) })
+        {
+            var file = _files.FirstOrDefault(f => f.RelativePath == sel);
+            <div class="active-slot">
+                <div class="thumb small">
+                    @if (file is not null)
+                    {
+                        <MediaThumb File="file" />
+                    }
+                    else
+                    {
+                        <span class="none">@(sel is null ? "Nenhum" : "Ficheiro em falta")</span>
+                    }
+                </div>
+                <div class="slot-info">
+                    <strong>@label</strong>
+                    <span class="muted ellipsis" title="@sel">@(sel ?? (slot switch { BackgroundSlot.FirstSlide => "Usa o fundo dos restantes", BackgroundSlot.Bible => "Usa o fundo dos louvores", BackgroundSlot.General => "Usa o fundo atual", _ => "Fundo padrão (azul)" }))</span>
+                    @if (sel is not null)
+                    {
+                        <button class="link" @onclick="() => Select(slot, null)">remover</button>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    @* ---------- Barra de ferramentas ---------- *@
+    <div class="toolbar">
+        <div class="segmented" role="group" aria-label="Filtro">
+            <button class="@(_filter == "all" ? "active" : null)" @onclick='() => _filter = "all"'>Todos (@_files.Count)</button>
+            <button class="@(_filter == "img" ? "active" : null)" @onclick='() => _filter = "img"'>Imagens</button>
+            <button class="@(_filter == "vid" ? "active" : null)" @onclick='() => _filter = "vid"'>Vídeos</button>
+        </div>
+        <span class="spacer"></span>
+        <label class="button primary @(_uploading ? "disabled" : null)">
+            ＋ Adicionar ficheiros
+            <InputFile OnChange="OnFilesSelected" multiple accept="image/*,video/mp4,video/webm,.m4v" disabled="@_uploading" />
+        </label>
+        <button @onclick="OpenFolder" title="@Media.GalleryFolder">📂 Abrir pasta</button>
+        <button @onclick="Reload" title="Atualizar">⟳</button>
+    </div>
+
+    @if (_message is not null)
+    {
+        <p class="notice @(_messageIsError ? "error" : null)">@_message <button class="link" @onclick="() => _message = null">fechar</button></p>
+    }
+
+    @* ---------- Grelha ---------- *@
+    @if (_files.Count == 0)
+    {
+        <div class="placeholder">
+            <h3>A Galeria está vazia</h3>
+            <p>Clique em <b>Adicionar ficheiros</b> ou copie imagens (JPG, PNG, WEBP) e vídeos (MP4, WEBM) para:</p>
+            <code>@Media.GalleryFolder</code>
+        </div>
+    }
+    else
+    {
+        <div class="grid-media">
+            @foreach (var file in visible)
+            {
+                var isSlides = file.RelativePath == slidesSel;
+                var isFirst = file.RelativePath == firstSel;
+                var isBible = file.RelativePath == bibleSel;
+                var isGeneral = file.RelativePath == generalSel;
+                <div @key="file.RelativePath" class="card @(isSlides || isFirst || isBible || isGeneral ? "selected" : null)"
+                     title="@file.RelativePath" @onclick="() => Select(BackgroundSlot.Slides, isSlides ? null : file.RelativePath)">
+                    <div class="thumb">
+                        <MediaThumb File="file" />
+                        @if (isSlides) { <span class="badge-sel">SELECIONADO!</span> }
+                        @if (isFirst) { <span class="badge-first">1.º SLIDE</span> }
+                        @if (isBible) { <span class="badge-bible">BÍBLIA</span> }
+                        @if (isGeneral) { <span class="badge-general">GERAL</span> }
+                        @if (file.IsVideo) { <span class="badge-video">▶ vídeo</span> }
+                    </div>
+                    <div class="card-footer">
+                        <span class="ellipsis">@file.Name</span>
+                        <span class="muted">@FormatSize(file.SizeBytes)</span>
+                    </div>
+                    <div class="card-actions" @onclick:stopPropagation="true">
+                        <button class="@(isFirst ? "on" : null)" title="Usar como fundo do 1.º slide"
+                                @onclick="() => Select(BackgroundSlot.FirstSlide, isFirst ? null : file.RelativePath)">1.º slide</button>
+                        <button class="@(isBible ? "on-bible" : null)" title="Usar como fundo das passagens bíblicas"
+                                @onclick="() => Select(BackgroundSlot.Bible, isBible ? null : file.RelativePath)">Bíblia</button>
+                        <button class="@(isGeneral ? "on-general" : null)" title="Usar como fundo do relógio/cronómetro"
+                                @onclick="() => Select(BackgroundSlot.General, isGeneral ? null : file.RelativePath)">Geral</button>
+                        <button title="Projetar só esta mídia (adiciona à fila)" @onclick="() => ProjectMedia(file)">Projetar</button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<MediaFile> _files = [];
+    private string _filter = "all";
+    private bool _uploading;
+    private string? _message;
+    private bool _messageIsError;
+
+    protected override void OnInitialized()
+    {
+        Media.Changed += OnMediaChanged;
+        Projection.OnStateChanged += OnProjectionChanged;
+        Reload();
+    }
+
+    private void Reload()
+    {
+        try
+        {
+            _files = Media.List();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Falha ao listar a Galeria");
+            Show("Não foi possível ler a pasta da Galeria.", error: true);
+        }
+    }
+
+    private void Select(BackgroundSlot slot, string? relativePath)
+    {
+        try
+        {
+            Gallery.Select(slot, relativePath);
+        }
+        catch (FileNotFoundException)
+        {
+            Show("Esse ficheiro já não existe na Galeria.", error: true);
+            Reload();
+        }
+    }
+
+    private void ProjectMedia(MediaFile file)
+    {
+        var item = QueueItemFactory.FromMedia(file);
+        Projection.Stage(item);
+        Projection.Enqueue(item);
+        Show($"\"{file.Name}\" adicionado à fila.");
+    }
+
+    private void OpenFolder()
+    {
+        if (!Gallery.OpenFolder())
+            Show($"Não foi possível abrir o gestor de ficheiros. A pasta é: {Media.GalleryFolder}", error: true);
+    }
+
+    /// <summary>Copia os ficheiros escolhidos para a Galeria (ficheiro a ficheiro).</summary>
+    private async Task OnFilesSelected(InputFileChangeEventArgs e)
+    {
+        _uploading = true;
+        var ok = 0;
+        var errors = new List<string>();
+
+        foreach (var file in e.GetMultipleFiles(maximumFileCount: 100))
+        {
+            try
+            {
+                Show($"A copiar {file.Name}…");
+                StateHasChanged();
+                await using var stream = file.OpenReadStream(MediaLibraryService.MaxImportBytes);
+                await Media.ImportAsync(file.Name, stream);
+                ok++;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Falha ao importar {File}", file.Name);
+                errors.Add($"{file.Name}: {ex.Message}");
+            }
+        }
+
+        _uploading = false;
+        Reload();
+        Show(errors.Count == 0
+            ? $"{ok} ficheiro(s) adicionado(s) à Galeria."
+            : $"{ok} adicionado(s). Falharam: {string.Join("; ", errors)}", error: errors.Count > 0);
+    }
+
+    private void Show(string message, bool error = false)
+    {
+        _message = message;
+        _messageIsError = error;
+    }
+
+    private void OnMediaChanged() => _ = InvokeAsync(() => { Reload(); StateHasChanged(); });
+
+    private void OnProjectionChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        >= 1024 * 1024 => $"{bytes / (1024.0 * 1024):0.#} MB",
+        >= 1024 => $"{bytes / 1024.0:0} KB",
+        _ => $"{bytes} B"
+    };
+
+    public void Dispose()
+    {
+        Media.Changed -= OnMediaChanged;
+        Projection.OnStateChanged -= OnProjectionChanged;
+    }
+}

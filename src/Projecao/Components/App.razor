@@ -1,0 +1,35 @@
+@*
+    Documento raiz. Todo o app é interativo (Blazor Server) e sem pré-renderização:
+    os componentes usam JS interop e subscrições do ProjectionService logo ao iniciar.
+*@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="@Settings.Theme">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <title>I-LOUVORES</title>
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="i-louvores.styles.css" />
+    <HeadOutlet @rendermode="RenderModeServer" />
+</head>
+<body>
+    <Routes @rendermode="RenderModeServer" />
+
+    <div id="blazor-error-ui">
+        Ocorreu um erro inesperado.
+        <a href="" class="reload">Recarregar</a>
+        <a class="dismiss">🗙</a>
+    </div>
+
+    <script src="_framework/blazor.web.js"></script>
+    <script src="js/projecao.js"></script>
+</body>
+</html>
+
+@code {
+    [Inject] private SettingsStore Settings { get; set; } = default!;
+
+    private static readonly IComponentRenderMode RenderModeServer = new InteractiveServerRenderMode(prerender: false);
+}

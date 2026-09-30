@@ -1,0 +1,14 @@
+@* Miniatura de imagem ou vídeo (o vídeo mostra o 1.º frame e toca ao passar o rato). *@
+@if (File.IsVideo)
+{
+    <video src="@(File.Url)#t=0.5" muted loop preload="metadata" playsinline
+           onmouseenter="this.play()" onmouseleave="this.pause()"></video>
+}
+else
+{
+    <img src="@File.Url" alt="@File.Name" loading="lazy" draggable="false" />
+}
+
+@code {
+    [Parameter, EditorRequired] public MediaFile File { get; set; } = default!;
+}

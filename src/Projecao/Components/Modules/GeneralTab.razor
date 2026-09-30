@@ -1,0 +1,111 @@
+@*
+    Módulo Geral (como no Glorifica): Cronómetro (h/m/s, Iniciar, Limpar), Relógio e Overlay.
+    Sem Overlay: ocupa o ecrã inteiro do projetor (fundo "Geral" da Galeria).
+    Com Overlay: aparece no canto, por cima do que estiver a ser projetado.
+    Cronómetro com 00:00:00 = contagem progressiva.
+*@
+@implements IDisposable
+@inject ProjectionService Projection
+
+@{
+    var s = Projection.State;
+    var active = s.Overlay != OverlayMode.None;
+    var (h, m, sec) = Display(s);
+}
+
+<div class="general">
+    <div class="general-controls">
+        <label class="radio"><input type="radio" name="mode" checked="@(_mode == OverlayMode.Countdown)" @onchange="() => _mode = OverlayMode.Countdown" /> Cronômetro</label>
+        <div class="hms">
+            <input type="number" min="0" max="23" @bind="_hours" aria-label="Horas" />
+            <input type="number" min="0" max="59" @bind="_minutes" aria-label="Minutos" />
+            <input type="number" min="0" max="59" @bind="_seconds" aria-label="Segundos" />
+        </div>
+        <div class="row">
+            <button class="start" @onclick="Start">⏻ Iniciar</button>
+            <button class="danger" @onclick="Clear">🧹 Limpar</button>
+        </div>
+
+        <label class="radio"><input type="radio" name="mode" checked="@(_mode == OverlayMode.Clock)" @onchange="() => _mode = OverlayMode.Clock" /> Relógio</label>
+
+        <label class="check overlay-check">
+            <input type="checkbox" checked="@_overlay" @onchange="OnOverlayChanged" /> Overlay
+            <span class="muted">(no canto, por cima do conteúdo)</span>
+        </label>
+
+        <p class="muted">@(active
+            ? (s.OverlayFullScreen ? "A mostrar em ecrã inteiro no projetor." : "A mostrar no canto do projetor.")
+            : "Nada a mostrar. Escolha o modo e clique em Iniciar.")
+            @if (!s.IsProjecting) { <br /><span><b>O projetor não está aberto</b> — clique em ▶ Projetar no painel à direita.</span> }</p>
+    </div>
+
+    <div class="clock-display @(active ? "on" : null)">
+        <span class="big">@h</span><span class="unit">Horas</span>
+        <span class="big">@m</span><span class="unit">Minutos</span>
+        <span class="big">@sec</span><span class="unit">Segundos</span>
+    </div>
+</div>
+
+@code {
+    private OverlayMode _mode = OverlayMode.Countdown;
+    private int _hours, _minutes = 5, _seconds;
+    private bool _overlay;
+    private Timer? _ticker;
+
+    protected override void OnInitialized()
+    {
+        Projection.OnStateChanged += OnChanged;
+        var s = Projection.State;
+        _overlay = s.Overlay != OverlayMode.None && !s.OverlayFullScreen;
+        if (s.Overlay == OverlayMode.Clock) _mode = OverlayMode.Clock;
+        _ticker = new Timer(_ => { if (Projection.State.Overlay != OverlayMode.None) _ = InvokeAsync(StateHasChanged); },
+            null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    private void Start()
+    {
+        if (_mode == OverlayMode.Clock)
+        {
+            Projection.ShowClock(fullScreen: !_overlay);
+            return;
+        }
+
+        var duration = new TimeSpan(Math.Clamp(_hours, 0, 23), Math.Clamp(_minutes, 0, 59), Math.Clamp(_seconds, 0, 59));
+        Projection.StartCountdown(duration, fullScreen: !_overlay);
+    }
+
+    private void Clear()
+    {
+        Projection.ClearOverlay();
+        _hours = _minutes = _seconds = 0;
+    }
+
+    private void OnOverlayChanged(ChangeEventArgs e)
+    {
+        _overlay = e.Value is true;
+        if (Projection.State.Overlay != OverlayMode.None)
+            Projection.SetOverlayFullScreen(!_overlay); // troca sem reiniciar a contagem
+    }
+
+    /// <summary>Mostrador do painel (espelha o que está no projetor).</summary>
+    private (string H, string M, string S) Display(ProjectionState s)
+    {
+        TimeSpan t = s.Overlay switch
+        {
+            OverlayMode.Clock => DateTime.Now.TimeOfDay,
+            OverlayMode.Countdown when s.CountdownTarget is { } end => end > DateTimeOffset.Now
+                ? TimeSpan.FromSeconds(Math.Ceiling((end - DateTimeOffset.Now).TotalSeconds)) : TimeSpan.Zero,
+            OverlayMode.Stopwatch when s.CountdownTarget is { } start => TimeSpan.FromSeconds(Math.Floor((DateTimeOffset.Now - start).TotalSeconds)),
+            _ => new TimeSpan(_hours, _minutes, _seconds)
+        };
+        return (((int)t.TotalHours).ToString("00"), t.Minutes.ToString("00"), t.Seconds.ToString("00"));
+    }
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Projection.OnStateChanged -= OnChanged;
+        _ticker?.Dispose();
+    }
+}

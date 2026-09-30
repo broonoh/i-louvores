@@ -1,0 +1,307 @@
+@*
+    Editor de louvores: corrigir letras e dados, criar, duplicar e apagar.
+    Pré-visualização em tempo real dos slides (com os refrões gerados pela sintaxe do Glorifica).
+*@
+@implements IDisposable
+@inject SongService Songs
+@inject MediaLibraryService Media
+@inject ILogger<SongEditorTab> Logger
+@inject IJSRuntime JS
+
+@{
+    var slides = SongMarkup.BuildSlides(_edit?.Lyrics);
+}
+
+<div class="editor-tab">
+    <div class="editor-list">
+        <div class="row">
+            <input type="search" placeholder="Procurar: nº, CIAS 12, título ou letra…" @bind="_query" @bind:event="oninput" @bind:after="SearchAsync" />
+        </div>
+        <button class="primary" @onclick="() => RequestOpen(null)">＋ Novo louvor</button>
+        <div class="list">
+            <Virtualize Items="_results" ItemSize="31" OverscanCount="20" Context="s">
+                <button class="item @(s.Id == _edit?.Id ? "active" : null)" @onclick="() => RequestOpen(s)" title="@s.Collection">
+                    <span class="num">@s.DisplayNumber</span> @s.Title
+                </button>
+            </Virtualize>
+        </div>
+    </div>
+
+    <div class="editor-form">
+        @if (_pending is not null)
+        {
+            <div class="notice warn-box">
+                Tem alterações por guardar em <b>@(_edit?.Title ?? "novo louvor")</b>.
+                <button class="primary" @onclick="SaveThenContinueAsync">Guardar</button>
+                <button class="danger" @onclick="DiscardThenContinue">Descartar</button>
+                <button @onclick="() => _pending = null">Cancelar</button>
+            </div>
+        }
+
+        @if (_edit is null)
+        {
+            <div class="placeholder">
+                <h3>Editor de louvores</h3>
+                <p>Escolha um louvor à esquerda para corrigir a letra ou os dados, ou clique em <b>＋ Novo louvor</b>.</p>
+            </div>
+        }
+        else
+        {
+            <div class="form-grid">
+                <label class="field span-3"><span>Título *</span><input @bind="_edit.Title" @bind:event="oninput" @bind:after="MarkDirty" maxlength="200" /></label>
+                <label class="field"><span>Nº</span><input type="number" min="0" @bind="_edit.Number" @bind:after="MarkDirty" /></label>
+                <label class="field"><span>Nº 2</span><input type="number" min="0" @bind="_edit.AltNumber" @bind:after="MarkDirty" /></label>
+                <label class="field"><span>Coletânea</span><input list="ed-collections" @bind="_edit.Collection" @bind:after="MarkDirty" maxlength="100" /></label>
+                <label class="field"><span>Autor</span><input @bind="_edit.Author" @bind:after="MarkDirty" maxlength="200" /></label>
+                <label class="field"><span>Categoria</span><input @bind="_edit.Category" @bind:after="MarkDirty" maxlength="100" /></label>
+                <label class="field"><span>Tom</span><input @bind="_edit.MusicalKey" @bind:after="MarkDirty" maxlength="10" placeholder="G, Am…" /></label>
+                <label class="field"><span>Ritmo</span><input @bind="_edit.Rhythm" @bind:after="MarkDirty" maxlength="50" /></label>
+                <label class="field span-2"><span>Fundo próprio (opcional)</span>
+                    <select @bind="_edit.BackgroundFile" @bind:after="MarkDirty">
+                        <option value="">— fundo da Galeria —</option>
+                        @foreach (var m in _media) { <option value="@m.RelativePath">@m.RelativePath</option> }
+                    </select>
+                </label>
+                <label class="field span-2"><span>Fundo próprio do 1.º slide (opcional)</span>
+                    <select @bind="_edit.FirstSlideBackgroundFile" @bind:after="MarkDirty">
+                        <option value="">— fundo da Galeria —</option>
+                        @foreach (var m in _media) { <option value="@m.RelativePath">@m.RelativePath</option> }
+                    </select>
+                </label>
+                <datalist id="ed-collections">@foreach (var c in _collections) { <option value="@c"></option> }</datalist>
+            </div>
+
+            <div class="lyrics-area">
+                <div class="lyrics-edit">
+                    <div class="col-title">Letra <span class="muted">— linha em branco = novo slide</span></div>
+                    <div class="color-bar">
+                        <span>🎨 Colorir o texto selecionado:</span>
+                        @foreach (var (name, hex) in TextColors)
+                        {
+                            <button class="swatch-sm" style="background:@hex" title="@name" @onclick="() => ColorSelectionAsync(hex)"></button>
+                        }
+                        <button class="nocolor" title="Tira a cor do texto selecionado" @onclick="() => ColorSelectionAsync(null)">Sem cor</button>
+                    </div>
+                    @if (_colorHint)
+                    {
+                        <div class="muted small warn-text">Primeiro selecione com o rato a palavra ou o trecho na letra abaixo.</div>
+                    }
+                    <textarea spellcheck="true" @ref="_lyricsRef" @bind="_edit.Lyrics" @bind:event="oninput" @bind:after="MarkDirty"></textarea>
+                    <details class="formats">
+                        <summary>Marcações (iguais às do Glorifica)</summary>
+                        <div class="formats-body">
+                            <p><code>Coro</code> no início da estrofe = refrão, repetido sozinho depois de cada estrofe seguinte ·
+                               <code>*Coro</code> = só formata (sem repetições automáticas) · <code>Final</code> = última estrofe, sem refrão depois ·
+                               <code>Cantar 2x</code>, <code>(2x)</code> = anotações · <code>(H)</code>/<code>(M)</code> no início da linha = homens/mulheres ·
+                               <code>(texto)</code> = outra cor · <code>/Instrumentos</code> = linha extra no mesmo slide.</p>
+                        </div>
+                    </details>
+                </div>
+                <div class="lyrics-preview">
+                    <div class="col-title">Pré-visualização — @slides.Count slide(s)</div>
+                    <div class="slides">
+                        @for (var i = 0; i < slides.Count; i++)
+                        {
+                            <div class="slide-card"><small>Slide @(i + 1)</small><SlideText Text="@slides[i]" /></div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @if (_warning is not null) { <p class="notice warn-box">@_warning</p> }
+            @if (_message is not null) { <p class="notice @(_messageIsError ? "error" : null)">@_message</p> }
+
+            <div class="editor-actions">
+                <button class="primary" disabled="@_busy" @onclick="SaveAsync">💾 Salvar @(_dirty ? "*" : "")</button>
+                <button disabled="@(!_dirty || _busy)" @onclick="Discard">Descartar alterações</button>
+                <button disabled="@(_edit.Id == 0)" @onclick="Duplicate">Duplicar</button>
+                <span class="spacer"></span>
+                @if (_confirmDelete)
+                {
+                    <span>Apagar "<b>@_edit.Title</b>"?</span>
+                    <button class="danger" @onclick="DeleteAsync">Sim, apagar</button>
+                    <button @onclick="() => _confirmDelete = false">Não</button>
+                }
+                else
+                {
+                    <button class="danger" disabled="@(_edit.Id == 0)" @onclick="() => _confirmDelete = true">Apagar</button>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<Projecao.Models.Song> _results = [];
+    private IReadOnlyList<string> _collections = [];
+    private IReadOnlyList<MediaFile> _media = [];
+    private string _query = string.Empty;
+    private Projecao.Models.Song? _edit;       // cópia em edição
+    private Projecao.Models.Song? _original;   // versão gravada (para "Descartar")
+    private bool _dirty;
+    private bool _busy;
+    private bool _confirmDelete;
+    private (bool IsNew, Projecao.Models.Song? Song)? _pending;
+    private string? _message, _warning;
+    private bool _messageIsError;
+    private CancellationTokenSource? _searchCts;
+    private ElementReference _lyricsRef;
+    private bool _colorHint;
+
+    private static readonly (string Name, string Hex)[] TextColors =
+    [
+        ("Amarelo", "#ffff00"), ("Dourado", "#f7d868"), ("Laranja", "#ff8c00"), ("Vermelho", "#ff3b30"), ("Rosa", "#ff7eb6"),
+        ("Verde", "#22c55e"), ("Azul claro", "#7dd3fc"), ("Azul", "#3b82f6"), ("Branco", "#ffffff"), ("Cinza claro", "#d1d5db")
+    ];
+
+    /// <summary>Aplica a cor só ao texto selecionado na letra (marca [cor=…]…[/cor]).</summary>
+    private async Task ColorSelectionAsync(string? hex)
+    {
+        _colorHint = !await JS.InvokeAsync<bool>("projecao.colorSelection", _lyricsRef, hex);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Songs.SongsChanged += OnSongsChanged;
+        _collections = await Songs.GetCollectionsAsync();
+        _media = Media.List();
+        await SearchAsync();
+    }
+
+    private async Task SearchAsync()
+    {
+        _searchCts?.Cancel();
+        var cts = _searchCts = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(150, cts.Token);
+            _results = (await Songs.SearchAsync(_query, ct: cts.Token)).ToList();
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    /// <summary>Abre outro louvor (ou um novo); se houver alterações por guardar, pergunta primeiro.</summary>
+    private void RequestOpen(Projecao.Models.Song? song)
+    {
+        if (_dirty)
+        {
+            _pending = (song is null, song);
+            return;
+        }
+        Open(song);
+    }
+
+    private void Open(Projecao.Models.Song? song)
+    {
+        _pending = null;
+        _confirmDelete = false;
+        _message = _warning = null;
+        _original = song;
+        _edit = song is null ? new Projecao.Models.Song { Title = string.Empty, Collection = _collections.FirstOrDefault() } : Clone(song);
+        _dirty = false;
+        _media = Media.List();
+    }
+
+    private async Task SaveThenContinueAsync()
+    {
+        var next = _pending;
+        _pending = null;
+        if (await SaveAsync() && next is { } n)
+            Open(n.Song);
+    }
+
+    private void DiscardThenContinue()
+    {
+        var next = _pending;
+        _dirty = false;
+        if (next is { } n) Open(n.Song);
+    }
+
+    private async Task<bool> SaveAsync()
+    {
+        if (_edit is null) return false;
+        _busy = true;
+        _message = _warning = null;
+        try
+        {
+            if (await Songs.FindNumberConflictAsync(_edit) is { } other)
+                _warning = $"Atenção: \"{other.Title}\" já usa o nº {_edit.Number} em {_edit.Collection ?? "sem coletânea"}.";
+
+            var saved = await Songs.SaveAsync(_edit);
+            _original = saved;
+            _edit = Clone(saved);
+            _dirty = false;
+            Show($"✔ \"{saved.Title}\" guardado. Se estiver na fila, o projetor já mostra a versão nova.");
+            _collections = await Songs.GetCollectionsAsync();
+            return true;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Show(ex.Message, error: true);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Falha a guardar louvor");
+            Show($"Não foi possível guardar: {ex.Message}", error: true);
+            return false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Discard()
+    {
+        _edit = _original is null ? new Projecao.Models.Song { Title = string.Empty } : Clone(_original);
+        _dirty = false;
+        Show("Alterações descartadas.");
+    }
+
+    private void Duplicate()
+    {
+        if (_edit is null) return;
+        var copy = Clone(_edit);
+        copy.Id = 0;
+        copy.Title = $"{_edit.Title} (cópia)";
+        _original = null;
+        _edit = copy;
+        _dirty = true;
+        Show("Cópia criada — altere e clique em Salvar.");
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_edit is null || _edit.Id == 0) return;
+        var title = _edit.Title;
+        await Songs.DeleteAsync(_edit.Id);
+        _edit = _original = null;
+        _dirty = false;
+        _confirmDelete = false;
+        Show($"\"{title}\" apagado.");
+    }
+
+    private void MarkDirty() => _dirty = true;
+
+    private void Show(string text, bool error = false)
+    {
+        _message = text;
+        _messageIsError = error;
+    }
+
+    private static Projecao.Models.Song Clone(Projecao.Models.Song s) => new()
+    {
+        Id = s.Id, Title = s.Title, Number = s.Number, AltNumber = s.AltNumber, Collection = s.Collection, Author = s.Author,
+        Category = s.Category, MusicalKey = s.MusicalKey, Rhythm = s.Rhythm, Lyrics = s.Lyrics,
+        BackgroundFile = s.BackgroundFile, FirstSlideBackgroundFile = s.FirstSlideBackgroundFile
+    };
+
+    private void OnSongsChanged() => _ = InvokeAsync(async () => { await SearchAsync(); StateHasChanged(); });
+
+    public void Dispose()
+    {
+        Songs.SongsChanged -= OnSongsChanged;
+        _searchCts?.Cancel();
+    }
+}

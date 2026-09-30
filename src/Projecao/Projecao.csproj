@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    App desktop Linux: Blazor Server local (Kestrel em 127.0.0.1) + janelas nativas
+    Photino (GTK3 + WebKitGTK 4.1). Painel e projetor são dois processos.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Projecao</RootNamespace>
+    <!-- Nome do executável = app_id no Wayland (liga a janela ao .desktop e ao ícone). -->
+    <AssemblyName>i-louvores</AssemblyName>
+    <Product>I-LOUVORES</Product>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Version>0.4.0</Version>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">linux-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Bíblia Livre (CC BY 3.0 BR) embutida; instalada na 1.ª execução. -->
+    <EmbeddedResource Include="Resources\Bible\bliv-tr_osis.zip" LogicalName="Projecao.Resources.Bible.bliv-tr_osis.zip" />
+    <None Include="Resources\Bible\LICENCA-BibliaLivre.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="Resources\i-louvores.png" Link="i-louvores.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Photino.NET" Version="4.0.16" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.9" />
+    <PackageReference Include="HtmlSanitizer" Version="9.2.1039" />
+    <!-- >= 0.92: corrige GHSA-xrw6-gwf8-vvr9 -->
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.95.1" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,117 @@
+@page "/"
+@inject Microsoft.Extensions.Hosting.IHostApplicationLifetime Lifetime
+@inject ProjectionService Projection
+@implements IDisposable
+@inject SettingsStore Settings
+@inject IJSRuntime JS
+
+<header class="appbar">
+    <img class="appbar-logo" src="favicon.png" alt="" />
+    <span class="appbar-name">I-LOUVORES</span>
+    <span class="appbar-spacer"></span>
+    <button class="theme" title="Cópia de segurança / levar para outro computador" @onclick="() => _showData = !_showData">💾 Dados</button>
+    <button class="theme" title="Tema do painel (o telão fica sempre escuro)" @onclick="CycleThemeAsync">@ThemeLabel</button>
+    <span class="appbar-clock" title="Hora atual">@_now.ToString("HH:mm")</span>
+    @if (_confirmExit)
+    {
+        <span class="exit-confirm">@(Projection.State.IsProjecting ? "O projetor está aberto. Sair mesmo?" : "Fechar o I-LOUVORES?")</span>
+        <button class="danger" @onclick="Exit">Sair</button>
+        <button @onclick="() => _confirmExit = false">Cancelar</button>
+    }
+    else
+    {
+        <button class="exit" title="Fechar o I-LOUVORES" @onclick="() => _confirmExit = true">⏻ Sair</button>
+    }
+</header>
+
+@if (_showData)
+{
+    <div class="overlay-backdrop" @onclick="() => _showData = false"></div>
+    <div class="overlay-dialog"><DataPanel OnClose="() => _showData = false" /></div>
+}
+
+<div class="shell">
+    @* ---------- Painel de ação (esquerda) ---------- *@
+    <section class="action-panel">
+        <nav class="tabs" role="tablist">
+            @foreach (var tab in Tabs)
+            {
+                <button role="tab" class="@(tab == _active ? "active" : null)" aria-selected="@(tab == _active)"
+                        @onclick="() => SelectTab(tab)">@tab</button>
+            }
+        </nav>
+
+        <div class="tab-body">
+            @switch (_active)
+            {
+                case "Louvores":
+                    <SongsTab />
+                    break;
+                case "Bíblia":
+                    <BibleTab />
+                    break;
+                case "Geral":
+                    <GeneralTab />
+                    break;
+                case "Avisos":
+                    <NoticesTab />
+                    break;
+                case "Galeria":
+                    <GalleryTab />
+                    break;
+                case "Editor":
+                    <EditorTab />
+                    break;
+                case "Configuração":
+                    <SettingsTab />
+                    break;
+            }
+        </div>
+    </section>
+
+    @* ---------- Painel Slide Show (direita, fixo) ---------- *@
+    <ProjectionControlPanel />
+</div>
+
+@code {
+    private static readonly string[] Tabs = ["Louvores", "Bíblia", "Geral", "Avisos", "Galeria", "Editor", "Configuração"];
+    private string _active = Tabs[0];
+    private bool _confirmExit;
+    private bool _showData;
+
+    /// <summary>Mudar de aba esvazia a fila de exibição (o telão mantém o que tem até projetar algo novo).</summary>
+    private void SelectTab(string tab)
+    {
+        if (tab == _active) return;
+        _active = tab;
+        Projection.ClearQueueKeepScreen();
+    }
+    private DateTime _now = DateTime.Now;
+    private Timer? _clock;
+
+    protected override void OnInitialized() =>
+        _clock = new Timer(_ => InvokeAsync(() => { _now = DateTime.Now; StateHasChanged(); }), null,
+            TimeSpan.FromSeconds(60 - DateTime.Now.Second), TimeSpan.FromMinutes(1));
+
+    public void Dispose() => _clock?.Dispose();
+
+    private string ThemeLabel => Settings.Theme switch
+    {
+        "light" => "☀ Claro",
+        "dark" => "☾ Escuro",
+        _ => "◐ Automático"
+    };
+
+    /// <summary>Automático → Claro → Escuro → Automático. Aplica na hora e guarda.</summary>
+    private async Task CycleThemeAsync()
+    {
+        Settings.Theme = Settings.Theme switch { "auto" => "light", "light" => "dark", _ => "auto" };
+        await JS.InvokeVoidAsync("projecao.setTheme", Settings.Theme);
+    }
+
+    /// <summary>
+    /// Encerra a app: o host fecha a janela do painel, que por sua vez fecha o projetor,
+    /// liberta o protetor de ecrã e desliga o servidor (ver DesktopHost).
+    /// </summary>
+    private void Exit() => Lifetime.StopApplication();
+}

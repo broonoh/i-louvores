@@ -1,0 +1,419 @@
+@*
+    Módulo Bíblia: versão → Livro → Capítulo → Versículo(s), pré-visualização e projeção.
+    "Ir para" aceita referências como "Jo 3:16", "Jo 3:16-18", "Sl 23", "1 Coríntios 13".
+*@
+@implements IDisposable
+@inject IJSRuntime JS
+@inject BibleService Bible
+@inject ProjectionService Projection
+@inject GalleryService Gallery
+@inject SettingsStore Settings
+@inject ILogger<BibleTab> Logger
+
+<div class="bible">
+    <div class="bible-toolbar">
+        <select @onchange="OnVersionChanged" disabled="@(_versions.Count == 0)" title="Versão">
+            @foreach (var v in _versions)
+            {
+                <option value="@v.Id" selected="@(v.Id == _versionId)">@v.Abbreviation — @v.Name</option>
+            }
+        </select>
+        <form class="goto" @onsubmit="GoToReferenceAsync">
+            <input @bind="_reference" placeholder="Ir para: Jo 3:16-18, Sl 23…" />
+            <button type="submit">Ir</button>
+        </form>
+        <button @onclick="ToggleWordSearch">🔍 Procurar palavra</button>
+        <span class="spacer"></span>
+        <button @onclick="() => _showVersions = !_showVersions">📚 Versões / Importar</button>
+    </div>
+
+    @if (_showWordSearch)
+    {
+        <form class="be-search" @onsubmit="SearchWordAsync">
+            <input @bind="_wordSearch" placeholder="Procurar em toda a Bíblia: promessa, fé, paz…" />
+            <button type="submit">🔍 Procurar</button>
+            <button type="button" class="link" @onclick="() => _showWordSearch = false">fechar</button>
+        </form>
+
+        @if (_wordResults is not null)
+        {
+            <div class="be-results">
+                <div class="col-title">@_wordResults.Count resultado(s) para "@_lastWordSearch" @(_wordResults.Count >= 200 ? "(mostrando os primeiros 200)" : "")</div>
+                @foreach (var r in _wordResults)
+                {
+                    <button class="be-result" @onclick="() => GoToWordResultAsync(r)">
+                        <b>@BookName(r.BookId) @r.Chapter:@r.Verse</b> @Highlight(r.Text)
+                    </button>
+                }
+            </div>
+        }
+    }
+
+    @if (_showVersions || _versions.Count == 0)
+    {
+        <BibleVersionsPanel Versions="_versions" OnClose="() => _showVersions = false" />
+    }
+
+    @if (_message is not null)
+    {
+        <p class="notice @(_messageIsError ? "error" : null)">@_message</p>
+    }
+
+    @if (_versionId is not null)
+    {
+        <div class="bible-columns">
+            <div class="col books">
+                <div class="col-title">Livro</div>
+                <input class="filter" @bind="_bookFilter" @bind:event="oninput" placeholder="Filtrar…" />
+                <div class="list">
+                    @foreach (var book in FilteredBooks)
+                    {
+                        var hasText = _booksWithText.Contains(book.Id);
+                        <button class="item @(book.Id == _book?.Id ? "active" : null)" disabled="@(!hasText)"
+                                @onclick="() => SelectBookAsync(book)">@book.Name</button>
+                    }
+                </div>
+            </div>
+
+            <div class="col chapters">
+                <div class="col-title">Capítulo</div>
+                <div class="grid-numbers">
+                    @for (var c = 1; c <= _chapterCount; c++)
+                    {
+                        var ch = c;
+                        <button class="num @(ch == _chapter ? "active" : null)" @onclick="() => SelectChapterAsync(ch)">@ch</button>
+                    }
+                </div>
+            </div>
+
+            <div class="col verses">
+                <div class="col-title">Versículo <span class="muted">(Shift+clique = intervalo · duplo clique = projetar)</span></div>
+                <div class="grid-numbers">
+                    @foreach (var v in _verses)
+                    {
+                        var verse = v;
+                        <button class="num @(IsSelected(verse.Verse) ? "active" : null) @(verse.Verse == _liveVerse ? "live" : null)"
+                                data-verse="@verse.Verse"
+                                @onclick="e => ClickVerse(verse.Verse, e.ShiftKey)" @ondblclick="ProjectNow">@verse.Verse</button>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="bible-preview">
+            @if (SelectedVerses.Count == 0)
+            {
+                <span class="muted">Escolha livro, capítulo e versículo(s).</span>
+            }
+            else
+            {
+                <div class="ref">@ReferenceText</div>
+                <div class="text">
+                    @foreach (var v in SelectedVerses)
+                    {
+                        <p><sup>@v.Verse</sup> @v.Text</p>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="bible-actions">
+            <button class="btn-queue" disabled="@(SelectedVerses.Count == 0)" @onclick="AddToQueue"
+                    title="Adiciona à fila só os versículos selecionados">＋ Fila (só a seleção)</button>
+            <button class="primary" disabled="@(SelectedVerses.Count == 0)" @onclick="ProjectNow"
+                    title="Começa no versículo escolhido; o Próximo avança versículo a versículo e continua sozinho nos capítulos seguintes">▶ Projetar (leitura)</button>
+            <span class="spacer"></span>
+            @if (_version?.Copyright is { Length: > 0 } credit)
+            {
+                <small class="credit" title="@credit">@credit</small>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<BibleVersionInfo> _versions = [];
+    private IReadOnlyList<Projecao.Models.BibleBook> _books = [];
+    private HashSet<int> _booksWithText = [];
+    private int? _versionId;
+    private Projecao.Models.BibleVersion? _version;
+    private Projecao.Models.BibleBook? _book;
+    private int _chapter;
+    private int _chapterCount;
+    private IReadOnlyList<Projecao.Models.BibleVerse> _verses = [];
+    private int? _from, _to;
+    private string _bookFilter = string.Empty;
+    private string _reference = string.Empty;
+    private bool _showVersions;
+    private bool _showWordSearch;
+    private string _wordSearch = string.Empty, _lastWordSearch = string.Empty;
+    private IReadOnlyList<Projecao.Models.BibleVerse>? _wordResults;
+    private string? _message;
+    private bool _messageIsError;
+    private int? _liveVerse;              // versículo no telão (se a leitura for desta aba)
+    private (int Book, int Chapter, int Slide)? _followed;
+
+    private IEnumerable<Projecao.Models.BibleBook> FilteredBooks =>
+        string.IsNullOrWhiteSpace(_bookFilter)
+            ? _books
+            : _books.Where(b => Projecao.Data.TextNormalizer.Normalize(b.Name).Contains(Projecao.Data.TextNormalizer.Normalize(_bookFilter))
+                                || b.Abbreviation.StartsWith(_bookFilter.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private List<Projecao.Models.BibleVerse> SelectedVerses =>
+        _from is { } f ? _verses.Where(v => v.Verse >= f && v.Verse <= (_to ?? f)).ToList() : [];
+
+    private string ReferenceText =>
+        _book is null || _from is null ? string.Empty
+        : $"{_book.Name} {_chapter}:{_from}{(_to is { } t && t != _from ? $"-{t}" : "")} ({_version?.Abbreviation})";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Bible.VersionsChanged += OnVersionsChanged;
+        Projection.OnStateChanged += OnProjectionChanged;
+        _books = await Bible.GetBooksAsync();
+        await LoadVersionsAsync();
+    }
+
+    private async Task LoadVersionsAsync()
+    {
+        _versions = await Bible.GetVersionsAsync();
+        var preferred = _versions.FirstOrDefault(v => v.Abbreviation == Settings.LastBibleVersion) ?? _versions.FirstOrDefault();
+        if (preferred is null)
+        {
+            _versionId = null;
+            return;
+        }
+        if (_versionId != preferred.Id || _version is null || !_versions.Any(v => v.Id == _versionId))
+            await SetVersionAsync(preferred.Id);
+    }
+
+    private async Task OnVersionChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id))
+            await SetVersionAsync(id);
+    }
+
+    private async Task SetVersionAsync(int versionId)
+    {
+        _versionId = versionId;
+        _version = await Bible.GetVersionAsync(versionId);
+        _booksWithText = await Bible.GetBooksWithTextAsync(versionId);
+        if (_version is not null)
+            Settings.LastBibleVersion = _version.Abbreviation;
+
+        // Mantém a passagem aberta ao trocar de versão (compara traduções).
+        if (_book is not null && _booksWithText.Contains(_book.Id))
+            await LoadChapterAsync(_book, Math.Max(1, _chapter), keepSelection: true);
+        else
+        {
+            _book = null;
+            _verses = [];
+            _chapterCount = 0;
+        }
+    }
+
+    private Task SelectBookAsync(Projecao.Models.BibleBook book) => LoadChapterAsync(book, 1, keepSelection: false);
+
+    private Task SelectChapterAsync(int chapter) => _book is null ? Task.CompletedTask : LoadChapterAsync(_book, chapter, keepSelection: false);
+
+    private async Task LoadChapterAsync(Projecao.Models.BibleBook book, int chapter, bool keepSelection)
+    {
+        if (_versionId is not { } vid) return;
+        _book = book;
+        _chapterCount = await Bible.GetChapterCountAsync(vid, book.Id);
+        _chapter = Math.Clamp(chapter, 1, Math.Max(1, _chapterCount));
+        _verses = await Bible.GetChapterAsync(vid, book.Id, _chapter);
+        if (!keepSelection)
+        {
+            _from = _verses.Count > 0 ? _verses[0].Verse : null;
+            _to = null;
+        }
+        StageSelection();
+    }
+
+    private void ClickVerse(int verse, bool shift)
+    {
+        if (shift && _from is { } anchor)
+        {
+            _from = Math.Min(anchor, verse);
+            _to = Math.Max(anchor, verse);
+        }
+        else
+        {
+            _from = verse;
+            _to = null;
+        }
+        StageSelection();
+    }
+
+    private bool IsSelected(int verse) => _from is { } f && verse >= f && verse <= (_to ?? f);
+
+    /// <summary>Referência escrita: "Jo 3:16", "Jo 3:16-18", "Sl 23", "1 Coríntios 13".</summary>
+    private async Task GoToReferenceAsync()
+    {
+        _message = null;
+        var m = System.Text.RegularExpressions.Regex.Match(_reference.Trim(), @"^(.+?)\s*(\d+)(?:\s*[:.,]\s*(\d+)(?:\s*-\s*(\d+))?)?$");
+        if (!m.Success || BibleBookResolver.Resolve(m.Groups[1].Value) is not { } bookId || _books.FirstOrDefault(b => b.Id == bookId) is not { } book)
+        {
+            Show($"Referência não reconhecida: \"{_reference}\". Exemplos: Jo 3:16, Sl 23, 1Co 13:4-7", error: true);
+            return;
+        }
+        if (!_booksWithText.Contains(bookId))
+        {
+            Show($"{book.Name} não existe nesta versão.", error: true);
+            return;
+        }
+
+        await LoadChapterAsync(book, int.Parse(m.Groups[2].Value), keepSelection: false);
+        if (m.Groups[3].Success)
+        {
+            var from = int.Parse(m.Groups[3].Value);
+            var to = m.Groups[4].Success ? int.Parse(m.Groups[4].Value) : (int?)null;
+            if (_verses.Any(v => v.Verse == from))
+            {
+                _from = from;
+                _to = to is { } t && t > from ? Math.Min(t, _verses.Max(v => v.Verse)) : null;
+            }
+            else
+            {
+                Show($"{book.Name} {_chapter} não tem o versículo {from}.", error: true);
+            }
+        }
+        StageSelection();
+    }
+
+    private QueueItem? BuildItem() =>
+        _version is not null && _book is not null && SelectedVerses.Count > 0
+            ? QueueItemFactory.FromVerses(_version, _book, _chapter, SelectedVerses, Gallery.GetBackground(BackgroundSlot.Bible))
+            : null;
+
+    /// <summary>Leitura: o capítulo inteiro, para o Próximo avançar versículo a versículo.</summary>
+    private QueueItem? BuildReadingItem() =>
+        _version is not null && _book is not null && _verses.Count > 0
+            ? QueueItemFactory.FromVerses(_version, _book, _chapter, _verses, Gallery.GetBackground(BackgroundSlot.Bible), reading: true)
+            : null;
+
+    /// <summary>
+    /// Prepara a leitura a partir do versículo escolhido para o painel Slide Show
+    /// (▶ Projetar / ＋ Adicionar / Próximo): assim o Próximo avança versículo a versículo.
+    /// Para projetar SÓ a seleção usa-se o botão "＋ Fila (só a seleção)" desta aba.
+    /// </summary>
+    private void StageSelection()
+    {
+        if (Projection.State.CurrentItem?.Reading is { } live && live.VersionId == _versionId && live.BookId == _book?.Id && live.Chapter == _chapter
+            && _liveVerse is not null && _from == _liveVerse)
+            return; // a seleção veio da própria leitura em curso
+        if (BuildReadingItem() is { } item && _from is { } from)
+            Projection.Stage(item, Math.Max(0, _verses.ToList().FindIndex(v => v.Verse == from)));
+    }
+
+    private void AddToQueue()
+    {
+        if (BuildItem() is { } item)
+        {
+            Projection.Enqueue(item);
+            Show($"{item.Title} adicionado à fila.");
+        }
+    }
+
+    /// <summary>Projeta a partir do versículo escolhido; Próximo/→ continua pelo capítulo e pelos seguintes.</summary>
+    private void ProjectNow()
+    {
+        if (BuildReadingItem() is not { } item || _from is not { } from)
+            return;
+
+        var start = Math.Max(0, _verses.ToList().FindIndex(v => v.Verse == from));
+        Projection.ProjectNow(item, start);
+        Show(Projection.State.IsProjecting
+            ? $"A projetar {_book!.Name} {_chapter}:{from} — use Próximo (→) para avançar versículo a versículo (continua no capítulo seguinte)."
+            : $"{_book!.Name} {_chapter}:{from} pronto — clique em ▶ Projetar no painel à direita.");
+    }
+
+    private void Show(string text, bool error = false)
+    {
+        _message = text;
+        _messageIsError = error;
+    }
+
+    private void ToggleWordSearch()
+    {
+        _showWordSearch = !_showWordSearch;
+        if (!_showWordSearch) _wordResults = null;
+    }
+
+    private async Task SearchWordAsync()
+    {
+        if (_versionId is not { } vid) return;
+        _lastWordSearch = _wordSearch.Trim();
+        _wordResults = _lastWordSearch.Length < 2 ? [] : await Bible.SearchTextAsync(vid, _lastWordSearch);
+    }
+
+    /// <summary>Abre a passagem do resultado nas colunas Livro/Capítulo/Versículo, pronta para projetar.</summary>
+    private async Task GoToWordResultAsync(Projecao.Models.BibleVerse result)
+    {
+        if (_books.FirstOrDefault(b => b.Id == result.BookId) is not { } book)
+            return;
+        await LoadChapterAsync(book, result.Chapter, keepSelection: false);
+        if (_verses.Any(v => v.Verse == result.Verse))
+        {
+            _from = result.Verse;
+            _to = null;
+            StageSelection();
+        }
+    }
+
+    private string BookName(int id) => _books.FirstOrDefault(b => b.Id == id)?.Name ?? $"Livro {id}";
+
+    private MarkupString Highlight(string text)
+    {
+        var encoded = System.Net.WebUtility.HtmlEncode(text);
+        if (_lastWordSearch.Length < 2) return (MarkupString)encoded;
+        var term = System.Net.WebUtility.HtmlEncode(_lastWordSearch);
+        return (MarkupString)System.Text.RegularExpressions.Regex.Replace(encoded, System.Text.RegularExpressions.Regex.Escape(term),
+            m => $"<mark>{m.Value}</mark>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    }
+
+    private void OnVersionsChanged() => _ = InvokeAsync(async () => { await LoadVersionsAsync(); StateHasChanged(); });
+
+    /// <summary>
+    /// Acompanha a leitura em projeção: ao carregar em Próximo/Anterior (painel, setas, outra janela)
+    /// a grelha marca o versículo no telão e, se a leitura mudou de capítulo/livro, abre-o aqui também.
+    /// </summary>
+    private void OnProjectionChanged() => _ = InvokeAsync(async () =>
+    {
+        var s = Projection.State;
+        if (s.CurrentItem is not { Reading: { } r } item || r.VersionId != _versionId)
+        {
+            if (_liveVerse is not null) { _liveVerse = null; StateHasChanged(); }
+            return;
+        }
+
+        var key = (r.BookId, r.Chapter, s.CurrentSlideIndex);
+        if (_followed == key) return;
+        _followed = key;
+
+        if (_book?.Id != r.BookId || _chapter != r.Chapter)
+        {
+            var book = _books.FirstOrDefault(b => b.Id == r.BookId);
+            if (book is null) return;
+            await LoadChapterAsync(book, r.Chapter, keepSelection: true);
+        }
+
+        // Os slides da leitura são os versículos do capítulo, pela mesma ordem.
+        if (s.CurrentSlideIndex >= 0 && s.CurrentSlideIndex < _verses.Count)
+        {
+            _liveVerse = _verses[s.CurrentSlideIndex].Verse;
+            _from = _liveVerse;
+            _to = null;
+        }
+        StateHasChanged();
+        try { await JS.InvokeVoidAsync("projecao.scrollIntoView", $".bible .verses [data-verse='{_liveVerse}']"); }
+        catch (JSDisconnectedException) { }
+    });
+
+    public void Dispose()
+    {
+        Bible.VersionsChanged -= OnVersionsChanged;
+        Projection.OnStateChanged -= OnProjectionChanged;
+    }
+}

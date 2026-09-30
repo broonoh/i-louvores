@@ -1,0 +1,169 @@
+@*
+    Versões da Bíblia instaladas + importação de novas versões (OSIS, Zefania, OpenSong, JSON, CSV, TXT, ZIP).
+*@
+@inject BibleService Bible
+@inject ILogger<BibleVersionsPanel> Logger
+
+<div class="import-panel">
+    <div class="import-header">
+        <h3>Versões da Bíblia</h3>
+        @if (Versions.Count > 0) { <button class="link" @onclick="OnClose">fechar</button> }
+    </div>
+
+    @if (Versions.Count == 0)
+    {
+        <p class="notice">Nenhuma versão instalada. Importe um ficheiro abaixo.</p>
+    }
+    else
+    {
+        <table class="grid versions">
+            <thead><tr><th>Sigla</th><th>Nome</th><th>Livros</th><th>Versículos</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var v in Versions)
+                {
+                    <tr>
+                        <td><b>@v.Abbreviation</b></td>
+                        <td>@v.Name</td>
+                        <td class="num">@v.BookCount</td>
+                        <td class="num">@v.VerseCount.ToString("N0")</td>
+                        <td>
+                            @if (_confirmDelete == v.Id)
+                            {
+                                <button class="danger" @onclick="() => DeleteAsync(v.Id)">Confirmar</button>
+                                <button @onclick="() => _confirmDelete = null">Cancelar</button>
+                            }
+                            else
+                            {
+                                <button @onclick="() => _confirmDelete = v.Id">Apagar</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <h4>Importar versão</h4>
+    <div class="import-options">
+        <label class="button primary @(_busy ? "disabled" : null)">
+            📖 Escolher ficheiro…
+            <InputFile OnChange="OnFileSelected" accept=".xml,.osis,.json,.csv,.tsv,.txt,.vpl,.zip" disabled="@_busy" />
+        </label>
+        <span class="muted">OSIS · Zefania · OpenSong · JSON · CSV/TSV · TXT (um versículo por linha) · ZIP</span>
+    </div>
+
+    @if (_parsed is not null)
+    {
+        <div class="parsed-summary">
+            <span>Formato: <b>@_parsed.Format</b></span>
+            <span>Livros: <b>@_parsed.BookCount</b></span>
+            <span>Versículos: <b>@_parsed.Verses.Count.ToString("N0")</b></span>
+        </div>
+        @if (_parsed.Issues.Count > 0)
+        {
+            <ul class="notes">@foreach (var i in _parsed.Issues) { <li>⚠ @i</li> }</ul>
+        }
+        @if (_parsed.Verses.Count > 0)
+        {
+            <div class="import-options">
+                <label class="field"><span>Sigla *</span><input @bind="_abbrev" maxlength="20" placeholder="ex.: ARC" /></label>
+                <label class="field wide"><span>Nome *</span><input @bind="_name" maxlength="150" placeholder="ex.: Almeida Revista e Corrigida" /></label>
+            </div>
+            <label class="field wide"><span>Direitos / crédito (aparece na aba Bíblia)</span><input @bind="_copyright" placeholder="ex.: © Sociedade Bíblica do Brasil — uso licenciado" /></label>
+            <div class="plan-summary">
+                <label class="check"><input type="checkbox" @bind="_replace" /> Substituir se a sigla já existir</label>
+                <span class="spacer"></span>
+                <button class="primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_abbrev) || string.IsNullOrWhiteSpace(_name))" @onclick="ImportAsync">
+                    @(_busy ? "A importar…" : $"Importar {_parsed.Verses.Count:N0} versículos")
+                </button>
+            </div>
+        }
+    }
+
+    @if (_status is not null)
+    {
+        <p class="notice @(_statusIsError ? "error" : null)">@_status</p>
+    }
+
+    <p class="muted small">Versões como a ARC e a ARA têm direitos de autor da Sociedade Bíblica do Brasil: importe apenas ficheiros que a igreja
+        tenha direito de usar. A Bíblia Livre (BLIVRE) vem incluída sob licença Creative Commons Atribuição 3.0 Brasil.</p>
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<BibleVersionInfo> Versions { get; set; } = [];
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private ParsedBible? _parsed;
+    private string _abbrev = string.Empty;
+    private string _name = string.Empty;
+    private string? _copyright;
+    private bool _replace;
+    private bool _busy;
+    private int? _confirmDelete;
+    private string? _status;
+    private bool _statusIsError;
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _busy = true;
+        _status = "A ler o ficheiro…";
+        _parsed = null;
+        try
+        {
+            using var ms = new MemoryStream();
+            await using (var s = e.File.OpenReadStream(BibleImportParser.MaxFileBytes))
+                await s.CopyToAsync(ms);
+
+            _parsed = await Task.Run(() => BibleImportParser.Parse(e.File.Name, ms.ToArray()));
+            _abbrev = _parsed.SuggestedAbbreviation ?? string.Empty;
+            _name = _parsed.SuggestedName ?? Path.GetFileNameWithoutExtension(e.File.Name);
+            _status = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Falha a ler {File}", e.File.Name);
+            _status = $"Não foi possível ler o ficheiro: {ex.Message}";
+            _statusIsError = true;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ImportAsync()
+    {
+        if (_parsed is null) return;
+        _busy = true;
+        try
+        {
+            var r = await Bible.ImportAsync(_parsed, _abbrev, _name, string.IsNullOrWhiteSpace(_copyright) ? null : _copyright.Trim(), _replace);
+            _status = $"✔ {_abbrev.ToUpperInvariant()} importada: {r.Verses:N0} versículos em {r.Elapsed.TotalSeconds:0.0} s.";
+            _statusIsError = false;
+            _parsed = null;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            _status = ex.Message;
+            _statusIsError = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Falha a importar versão");
+            _status = $"A importação falhou e nada foi gravado: {ex.Message}";
+            _statusIsError = true;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteAsync(int versionId)
+    {
+        _confirmDelete = null;
+        await Bible.DeleteVersionAsync(versionId);
+        _status = "Versão apagada.";
+        _statusIsError = false;
+    }
+}

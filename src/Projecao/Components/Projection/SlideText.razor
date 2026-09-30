@@ -1,0 +1,59 @@
+@*
+    Desenha um slide com a sintaxe de letras do Glorifica: rótulos (Coro/Final/Cantar 2x),
+    refrão destacado, vozes (H)/(M), parênteses e cores próprias ([cor=…]…[/cor]).
+    Estilos globais em wwwroot/css/app.css (.mk-*), usados no projetor e nas pré-visualizações.
+    Pickable = true (aba Configuração): cada trecho leva a sua posição no texto original
+    (data-l/data-o) e o tipo (data-t), para selecionar com o rato e colorir só essa parte.
+*@
+@{
+    var parsed = SongMarkup.Parse(Text);
+}
+<div class="mk @(parsed.IsChorus ? "mk-chorus" : null)">
+    @foreach (var line in parsed.Lines)
+    {
+        <div class="mk-line @LineClass(line.Kind)" data-t="@(Pickable ? PickType(line.Kind, parsed.IsChorus) : null)">
+            @if (line.Kind == MarkupLineKind.Blank)
+            {
+                @((MarkupString)"&nbsp;")
+            }
+            else
+            {
+                @foreach (var seg in line.Segments)
+                {
+                    if (Pickable)
+                    {
+                        <span class="@(seg.IsParenthetical ? "mk-paren" : null)" style="@(seg.Color is null ? null : $"color:{seg.Color}")"
+                              data-l="@seg.SourceLine" data-o="@seg.SourceStart" data-t="@(seg.IsParenthetical ? "paren" : null)">@seg.Text</span>
+                    }
+                    else if (seg.Color is not null)
+                    {
+                        <span class="@(seg.IsParenthetical ? "mk-paren" : null)" style="color:@seg.Color">@seg.Text</span>
+                    }
+                    else if (seg.IsParenthetical) { <span class="mk-paren">@seg.Text</span> }
+                    else { @seg.Text }
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = string.Empty;
+    [Parameter] public bool Pickable { get; set; }
+
+    private static string? LineClass(MarkupLineKind kind) => kind switch
+    {
+        MarkupLineKind.Label => "mk-label",
+        MarkupLineKind.Men => "mk-men",
+        MarkupLineKind.Women => "mk-women",
+        MarkupLineKind.Blank => "mk-blank",
+        _ => null
+    };
+
+    private static string PickType(MarkupLineKind kind, bool chorus) => kind switch
+    {
+        MarkupLineKind.Men => "men",
+        MarkupLineKind.Women => "women",
+        _ => chorus ? "chorus" : "lyrics"
+    };
+}

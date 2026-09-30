@@ -1,0 +1,122 @@
+@*
+    Migração do Glorifica: deteta a instalação (Bottles/Wine/PlayOnLinux ou pasta copiada)
+    e importa letras (Louvores/raw), galeria, modelos e fundos configurados.
+*@
+@inject GlorificaMigrationService Migration
+@inject BackupService Backup
+@inject ILogger<GlorificaMigrationPanel> Logger
+
+<div class="import-panel">
+    <div class="import-header">
+        <h3>Trazer do Glorifica</h3>
+        <button class="link" @onclick="OnClose">fechar</button>
+    </div>
+    <p class="intro">Se já usa o <b>Glorifica</b> neste computador, isto copia para o I-LOUVORES, num clique:
+        <b>os louvores</b> que editou, <b>as imagens de fundo</b> e <b>os fundos que estavam escolhidos</b>
+        (1.º slide, restantes, Bíblia e cronómetro). O Glorifica não é alterado. Pode repetir sem criar duplicados.</p>
+
+    @if (_installations is null)
+    {
+        <p class="muted">A procurar o Glorifica neste computador…</p>
+    }
+    else if (_installations.Count == 0)
+    {
+        <p class="notice">Não encontrei nenhuma instalação do Glorifica (Bottles, Wine, PlayOnLinux ou ~/Documentos/Glorifica com Config.ini).
+            Se tem a pasta <code>Documentos\Glorifica</code> de um PC com Windows, copie-a para <code>~/Documentos/Glorifica</code> e volte a abrir esta janela.</p>
+    }
+    else
+    {
+        @foreach (var inst in _installations)
+        {
+            <label class="install @(inst == _selected ? "selected" : null)">
+                <input type="radio" name="glorifica" checked="@(inst == _selected)" @onchange="() => _selected = inst" />
+                <span>
+                    <b>@inst.Label</b> — @inst.SongCount louvores, @inst.ImageCount imagens@(inst.HasConfig ? ", configuração" : "")
+                    <br /><span class="muted ellipsis">@inst.DocumentsFolder</span>
+                </span>
+            </label>
+        }
+
+        <div class="import-options">
+            <label class="field">
+                <span>Coletânea para estes louvores</span>
+                <input @bind="_collection" placeholder="ex.: Avulsos" />
+            </label>
+            <label class="check"><input type="checkbox" @bind="_updateExisting" /> Atualizar: substituir louvores que já existem (com cópia de segurança)</label>
+            <label class="check"><input type="checkbox" @bind="_importImages" /> Copiar galeria e modelos</label>
+            <label class="check"><input type="checkbox" @bind="_applyBackgrounds" disabled="@(!_importImages)" /> Usar os mesmos fundos do Glorifica</label>
+        </div>
+
+        <details class="formats">
+            <summary>Detalhes técnicos</summary>
+            <p class="muted">São lidas as letras de <code>Louvores/raw</code> (as coletâneas <code>PT_*.xbY</code> são cifradas e não podem ser lidas).
+                As marcações do Glorifica (Coro, *Coro, Final, (H)/(M), "/") são mantidas e projetadas da mesma forma.</p>
+        </details>
+
+        <div class="plan-summary">
+            <span class="spacer"></span>
+            <button class="primary" disabled="@(_busy || _selected is null)" @onclick="MigrateAsync">
+                @(_busy ? "A importar…" : "Importar tudo")
+            </button>
+        </div>
+    }
+
+    @if (_result is not null)
+    {
+        <p class="notice">✔ @_result.Songs.Created louvor(es) novo(s), @_result.Songs.Updated atualizado(s), @_result.Songs.Skipped já existiam ·
+            @_result.ImagesCopied imagem(ns) copiada(s) para a Galeria.</p>
+        @if (_result.Notes.Count > 0)
+        {
+            <ul class="notes">@foreach (var n in _result.Notes) { <li>@n</li> }</ul>
+        }
+    }
+    @if (_error is not null)
+    {
+        <p class="notice error">@_error</p>
+    }
+</div>
+
+@code {
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnImported { get; set; }
+
+    private IReadOnlyList<GlorificaInstallation>? _installations;
+    private GlorificaInstallation? _selected;
+    private string _collection = "Avulsos";
+    private bool _updateExisting;
+    private bool _importImages = true;
+    private bool _applyBackgrounds = true;
+    private bool _busy;
+    private GlorificaMigrationResult? _result;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _installations = await Task.Run(() => Migration.Detect());
+        _selected = _installations.FirstOrDefault();
+    }
+
+    private async Task MigrateAsync()
+    {
+        if (_selected is null) return;
+        _busy = true;
+        _error = null;
+        _result = null;
+        try
+        {
+            if (_updateExisting)
+                await Task.Run(() => Backup.CreateSafetyCopy("atualizacao-glorifica"));
+            _result = await Migration.MigrateAsync(_selected.DocumentsFolder, _collection, _updateExisting, _importImages, _applyBackgrounds && _importImages);
+            await OnImported.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Falha na migração do Glorifica");
+            _error = $"A importação falhou: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

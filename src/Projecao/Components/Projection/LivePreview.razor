@@ -1,0 +1,59 @@
+@*
+    Miniatura 16:9 do que está no projetor (mesmo fundo, título e texto).
+    Usa unidades de contentor (cqh) para escalar como o ecrã real.
+*@
+<div class="live-preview @(Frame.IsBlank ? "blank" : null)" style="@(Style is null ? null : ProjectionCss.Vars(Style))">
+    @if (Frame.IsBlank)
+    {
+        <span class="lp-state">TELA PRETA</span>
+    }
+    else
+    {
+        var slide = Frame.Slide;
+        var solid = CssSafe.Color(slide?.Style?.BackColor);
+        @if (solid is not null)
+        {
+            <div class="lp-bg" style="background:@solid"></div>
+        }
+        else if (Frame.Background is { IsVideo: true } v)
+        {
+            <video class="lp-bg" src="@v.Url" muted autoplay loop playsinline></video>
+        }
+        else if (Frame.Background is { } img)
+        {
+            <img class="lp-bg" src="@img.Url" alt="" draggable="false" />
+        }
+        else
+        {
+            <div class="lp-bg lp-default"></div>
+        }
+
+        @if (slide is not null)
+        {
+            @if (!string.IsNullOrWhiteSpace(slide.Heading))
+            {
+                <div class="lp-heading @(slide.Layout == SlideLayout.Bible ? "bible" : null)">@slide.Heading</div>
+            }
+            <div class="lp-text @(slide.Layout != SlideLayout.Full ? "below-heading" : null)">
+                @if (slide.Html) { @((MarkupString)slide.Text) }
+                else if (slide.Markup) { <SlideText Text="@slide.Text" /> }
+                else { @slide.Text }
+            </div>
+        }
+        else if (!IsProjecting)
+        {
+            <span class="lp-state">Projetor desligado</span>
+        }
+
+        @if (Frame.Overlay != OverlayMode.None)
+        {
+            <span class="lp-overlay">@(Frame.Overlay == OverlayMode.Clock ? "🕒 Relógio" : "⏱ Cronómetro")</span>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public LiveFrame Frame { get; set; } = LiveFrame.Empty;
+    [Parameter] public bool IsProjecting { get; set; }
+    [Parameter] public ProjectionStyle? Style { get; set; }
+}

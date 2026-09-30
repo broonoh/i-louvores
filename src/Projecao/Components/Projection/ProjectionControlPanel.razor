@@ -1,0 +1,327 @@
+@*
+    Painel "Slide Show" (coluna direita). Pensado para o operador durante o culto:
+      1. o que está no telão (pré-visualização + estado);
+      2. os comandos de todos os minutos, grandes (Projetar, Anterior/Próximo, Freeze, Tela preta);
+      3. a fila de exibição;
+      4. configurações do projetor, recolhidas (escolhem-se uma vez).
+*@
+@implements IAsyncDisposable
+@inject ProjectionService Projection
+@inject IDisplayService Displays
+@inject IProjectionWindowManager ProjectionWindow
+@inject SettingsStore Settings
+@inject IJSRuntime JS
+@inject ILogger<ProjectionControlPanel> Logger
+
+@{
+    var s = Projection.State;
+    var current = s.CurrentItem;
+}
+
+<aside class="panel">
+    @* ---------------- 1. No telão ---------------- *@
+    <header class="panel-header">
+        <h2>Slide Show</h2>
+        <span class="status @StatusClass(s)"><span class="dot"></span>@StatusText(s)</span>
+    </header>
+
+    <LivePreview Frame="s.Live" IsProjecting="s.IsProjecting" Style="s.Style" />
+
+    <div class="now-line">
+        @if (current is null && s.IsProjecting && s.Live.Slide is not null)
+        {
+            <span class="muted">A fila foi limpa — o telão mantém o slide anterior até projetar algo novo.</span>
+        }
+        else if (current is null)
+        {
+            <span class="muted">Nada selecionado — escolha um louvor, versículo ou aviso à esquerda.</span>
+        }
+        else
+        {
+            <span class="badge">@current.KindLabel</span>
+            <span class="ellipsis" title="@current.Title">@current.Title</span>
+            <span class="pos">@(s.CurrentSlideIndex + 1)/@current.Slides.Count</span>
+        }
+    </div>
+
+    @* ---------------- 2. Comandos ---------------- *@
+    <button class="btn-project @(s.IsProjecting ? "stop" : null)" @onclick="ToggleProjectionAsync"
+            disabled="@(_busy || SelectedMonitor is null)">
+        @(s.IsProjecting ? "■  Parar projeção" : "▶  Projetar")
+    </button>
+
+    <div class="nav">
+        <button class="btn-nav" @onclick="Projection.Previous" disabled="@(!s.CanGoPrevious)" title="Anterior (← ou PageUp)">◀ Anterior</button>
+        <button class="btn-nav next" @onclick="Projection.Next" disabled="@(!s.CanGoNext)" title="Próximo (→, PageDown ou Espaço)">Próximo ▶</button>
+    </div>
+
+    @if (current is not null && current.Slides.Count > 1)
+    {
+        <div class="pills">
+            @for (var i = 0; i < current.Slides.Count; i++)
+            {
+                var index = i;
+                <button class="pill @(index == s.CurrentSlideIndex ? "active" : null)" title="@current.Slides[index].Text"
+                        @onclick="() => Projection.GoToSlide(index)">@(index + 1)</button>
+            }
+        </div>
+    }
+
+    <div class="toggles">
+        <button class="toggle @(s.IsFrozen ? "on freeze" : null)" aria-pressed="@s.IsFrozen" @onclick="Projection.ToggleFreeze"
+                title="Congela o telão enquanto navega (Alt+F10)">
+            ❄ Congelar <kbd>Alt+F10</kbd>
+        </button>
+        <button class="toggle @(s.IsBlank ? "on blank" : null)" aria-pressed="@s.IsBlank" @onclick="Projection.ToggleBlank"
+                title="Deixa o telão preto (Alt+F11)">
+            ■ Tela preta <kbd>Alt+F11</kbd>
+        </button>
+    </div>
+
+    @if (_error is not null)
+    {
+        <p class="error" role="alert">@_error <button class="link" @onclick="() => _error = null">fechar</button></p>
+    }
+
+    @* ---------------- 3. Fila ---------------- *@
+    <section class="queue">
+        <div class="queue-head">
+            <h3>Fila de exibição <span class="count">@s.Queue.Count</span></h3>
+            <button class="btn-add" @onclick="Projection.AddStaged" disabled="@(s.Staged is null)"
+                    title="@(s.Staged is null ? "Escolha algo à esquerda primeiro" : $"Adicionar: {s.Staged.Title}")">＋ Adicionar</button>
+        </div>
+        @if (s.Staged is { } staged)
+        {
+            <div class="staged" title="Escolhido à esquerda — clique em Adicionar para pôr na fila">
+                <span class="muted">Escolhido:</span> <span class="ellipsis">@staged.Title</span>
+            </div>
+        }
+
+        <div class="queue-list">
+            @if (s.Queue.Count == 0)
+            {
+                <div class="queue-empty">
+                    <span>A fila está vazia.</span>
+                    <span class="muted">Escolha um louvor ou versículo e clique em <b>＋ Adicionar</b>,<br />ou dê duplo clique num slide para projetar logo.</span>
+                </div>
+            }
+            @foreach (var item in s.Queue)
+            {
+                var isCurrent = item.Id == s.CurrentItemId;
+                <div @key="item.Id" class="queue-item @(isCurrent ? "current" : null) @(item.Id == _selectedRowId ? "selected" : null)"
+                     @onclick="() => _selectedRowId = item.Id" @ondblclick="() => Projection.Select(item.Id)"
+                     title="Duplo clique para projetar">
+                    <span class="qi-marker">@(isCurrent ? "▶" : "")</span>
+                    <span class="qi-kind kind-@item.Kind.ToString().ToLowerInvariant()">@item.KindLabel</span>
+                    <span class="qi-title ellipsis">@item.Title</span>
+                    <span class="qi-count">@item.Slides.Count</span>
+                    <span class="qi-actions" @onclick:stopPropagation="true">
+                        <button title="Projetar este" @onclick="() => Projection.Select(item.Id)">▶</button>
+                        <button title="Subir" @onclick="() => Projection.Move(item.Id, -1)">↑</button>
+                        <button title="Descer" @onclick="() => Projection.Move(item.Id, 1)">↓</button>
+                        <button class="del" title="Remover da fila" @onclick="() => Remove(item.Id)">✕</button>
+                    </span>
+                </div>
+            }
+        </div>
+    </section>
+
+    @* ---------------- 4. Projetor (configuração) ---------------- *@
+    <details class="settings" open="@(_monitors.Count != 2 && !s.IsProjecting)">
+        <summary>
+            <span>⚙ Projetor</span>
+            <span class="muted ellipsis">@(SelectedMonitor?.Description ?? "nenhum monitor")</span>
+        </summary>
+        <div class="settings-body">
+            <label for="monitor">Monitor / projetor / TV</label>
+            <div class="row">
+                <select id="monitor" @onchange="OnMonitorChangedAsync" disabled="@_busy">
+                    @foreach (var m in _monitors)
+                    {
+                        <option value="@m.Id" selected="@(m.Id == _selectedMonitorId)">@m.Description</option>
+                    }
+                </select>
+                <button title="Procurar monitores de novo (ligou agora o projetor?)" @onclick="RefreshMonitors" disabled="@_busy">⟳</button>
+            </div>
+            @if (_monitors.Count == 1)
+            {
+                <p class="hint warn">Só um ecrã detetado. Se o projetor/TV está ligado, escolha <b>Estender</b> (não Espelhar) nas definições de ecrã do sistema e clique em ⟳.</p>
+            }
+
+            <label for="safe">Margem para TV <span class="muted">(se a TV cortar as bordas)</span></label>
+            <select id="safe" @onchange="OnSafeAreaChanged">
+                @foreach (var pct in SafeAreaOptions)
+                {
+                    <option value="@pct" selected="@(pct == s.SafeAreaPercent)">@(pct == 0 ? "Nenhuma (projetor)" : $"{pct}% de cada lado")</option>
+                }
+            </select>
+
+            <button class="btn-update" @onclick="UpdateAsync" disabled="@_busy" title="Redesenha o telão e volta a pôr a janela no monitor certo">
+                ⟳ Atualizar telão
+            </button>
+        </div>
+    </details>
+</aside>
+
+@code {
+    private static readonly double[] SafeAreaOptions = [0, 2, 3, 5, 7];
+
+    private IReadOnlyList<MonitorInfo> _monitors = [];
+    private string _selectedMonitorId = string.Empty;
+    private Guid? _selectedRowId;
+    private bool _busy;
+    private string? _error;
+    private DotNetObjectReference<ProjectionControlPanel>? _selfRef;
+    private Timer? _ticker;
+
+    private MonitorInfo? SelectedMonitor => _monitors.FirstOrDefault(m => m.Id == _selectedMonitorId);
+
+    protected override void OnInitialized()
+    {
+        Projection.OnStateChanged += HandleStateChanged;
+        RefreshMonitors();
+        // A pré-visualização mostra relógio/cronómetro a correr.
+        _ticker = new Timer(_ => { if (Projection.State.Overlay != OverlayMode.None) _ = InvokeAsync(StateHasChanged); },
+            null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        _selfRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("projecao.registerHotkeys", _selfRef);
+    }
+
+    /// <summary>Chamado pelo JS (Alt+F10, Alt+F11, setas…).</summary>
+    [JSInvokable]
+    public void OnHotkey(string action) => Projection.ExecuteHotkey(action);
+
+    private void HandleStateChanged() => _ = InvokeAsync(StateHasChanged);
+
+    // ---------------- Monitores ----------------
+
+    private void RefreshMonitors()
+    {
+        try
+        {
+            _monitors = Displays.GetMonitors();
+            var keep = _monitors.FirstOrDefault(m => m.Id == _selectedMonitorId);
+            var chosen = keep ?? MonitorSelection.PickDefault(_monitors, Displays.PreferredMonitor);
+            _selectedMonitorId = chosen?.Id ?? string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Falha ao listar monitores");
+            _error = "Não foi possível listar os monitores.";
+        }
+    }
+
+    private async Task OnMonitorChangedAsync(ChangeEventArgs e)
+    {
+        _selectedMonitorId = e.Value?.ToString() ?? string.Empty;
+        if (SelectedMonitor is not { } monitor)
+            return;
+
+        Displays.PreferredMonitor = new MonitorPreference(monitor.Id, monitor.DeviceName);
+
+        // Se já está a projetar, move a janela na hora.
+        if (ProjectionWindow.IsOpen)
+            await RunBusyAsync(() => ProjectionWindow.OpenAsync(monitor), "mover a projeção");
+    }
+
+    private void OnSafeAreaChanged(ChangeEventArgs e)
+    {
+        if (!double.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var pct))
+            return;
+
+        Projection.SetSafeArea(pct);
+        Settings.SafeAreaPercent = pct;
+    }
+
+    // ---------------- Comandos ----------------
+
+    private async Task ToggleProjectionAsync()
+    {
+        if (Projection.State.IsProjecting || ProjectionWindow.IsOpen)
+        {
+            await RunBusyAsync(ProjectionWindow.CloseAsync, "fechar a projeção");
+            Projection.StopProjection();
+            return;
+        }
+
+        if (SelectedMonitor is not { } monitor)
+            return;
+
+        var opened = await RunBusyAsync(() => ProjectionWindow.OpenAsync(monitor), "abrir a projeção");
+        if (opened)
+            Projection.StartProjection();
+    }
+
+    /// <summary>Reaplica o monitor (ex.: após trocar resolução) e redesenha o projetor.</summary>
+    private async Task UpdateAsync()
+    {
+        RefreshMonitors();
+        if (ProjectionWindow.IsOpen && SelectedMonitor is { } monitor)
+            await RunBusyAsync(() => ProjectionWindow.OpenAsync(monitor), "atualizar a projeção");
+        Projection.Refresh();
+    }
+
+    private async Task<bool> RunBusyAsync(Func<Task> action, string what)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            await action();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Falha ao {What}", what);
+            _error = $"Não foi possível {what}: {ex.Message}";
+            return false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Remove(Guid id)
+    {
+        Projection.Remove(id);
+        if (_selectedRowId == id) _selectedRowId = null;
+    }
+
+    // ---------------- Estado ----------------
+
+    private static string StatusText(ProjectionState s) => s switch
+    {
+        { IsProjecting: false } => "Aguardando",
+        { IsBlank: true } => "Tela preta",
+        { IsFrozen: true } => "Congelado",
+        _ => "AO VIVO"
+    };
+
+    private static string StatusClass(ProjectionState s) => s switch
+    {
+        { IsProjecting: false } => "idle",
+        { IsBlank: true } or { IsFrozen: true } => "held",
+        _ => "live"
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        Projection.OnStateChanged -= HandleStateChanged;
+        if (_ticker is not null) await _ticker.DisposeAsync();
+        try
+        {
+            await JS.InvokeVoidAsync("projecao.unregisterHotkeys");
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+        _selfRef?.Dispose();
+    }
+}

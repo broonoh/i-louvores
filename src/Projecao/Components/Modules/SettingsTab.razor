@@ -1,0 +1,460 @@
+@*
+    Aba Configuração — aparência do telão, de forma direta:
+      1. clique no texto da pré-visualização que quer mudar (título, letra, refrão…);
+      2. escolha a cor na paleta e aumente/diminua a fonte com A− / A+.
+    As alterações aparecem primeiro só nesta pré-visualização; o telão só muda ao clicar em "Aplicar no telão".
+*@
+@inject ProjectionService Projection
+@inject SettingsStore Settings
+@inject FontService Fonts
+@inject GalleryService Gallery
+@inject IJSRuntime JS
+@inject SongService SongStore
+@implements IDisposable
+
+<div class="cfg">
+    <div class="cfg-top">
+        <div class="segmented" role="tablist">
+            <button class="@(_mode == Mode.Song ? "active" : null)" @onclick="() => SetMode(Mode.Song)">🎵 Louvor</button>
+            <button class="@(_mode == Mode.Bible ? "active" : null)" @onclick="() => SetMode(Mode.Bible)">📖 Bíblia</button>
+            <button class="@(_mode == Mode.Clock ? "active" : null)" @onclick="() => SetMode(Mode.Clock)">⏱ Relógio</button>
+        </div>
+        <span class="cfg-hint">
+            @if (_mode == Mode.Song)
+            {
+                <span>🖱 <b>Arraste o rato</b> sobre as palavras para colorir só essas (neste louvor) ·
+                    <b>clique</b> num texto para mudar todos os louvores</span>
+            }
+            else
+            {
+                <span>👆 Clique no texto da imagem que quer mudar</span>
+            }
+        </span>
+        <span class="spacer"></span>
+        <button @onclick="Reset" title="Volta às cores e fontes originais (como no Glorifica) — ainda precisa de Aplicar">↺ Restaurar padrão</button>
+    </div>
+
+    @if (Pending)
+    {
+        <div class="cfg-pending">
+            <span>✏ Tem alterações que ainda <b>não estão no telão</b>. Veja na pré-visualização abaixo e, se gostar, aplique.</span>
+            <span class="spacer"></span>
+            <button class="primary" @onclick="ApplyToScreen">✔ Aplicar no telão</button>
+            <button @onclick="Discard">Descartar</button>
+        </div>
+    }
+    else if (_appliedMessage)
+    {
+        <div class="cfg-applied">✔ Aplicado no telão e guardado.</div>
+    }
+
+    <div class="cfg-body">
+        @* ---------------- Pré-visualização clicável ---------------- *@
+        <div class="cfg-preview" style="@ProjectionCss.Vars(_s)">
+            @if (_mode == Mode.Song)
+            {
+                <div class="cfg-song-bar">
+                    <div class="cfg-song-search">
+                        <input type="search" placeholder="Escolher louvor (nº ou nome)…" @bind="_songQuery" @bind:event="oninput" @bind:after="SearchSongsAsync" />
+                        @if (_songResults.Count > 0)
+                        {
+                            <div class="cfg-song-results">
+                                @foreach (var r in _songResults)
+                                {
+                                    <button @onclick="() => OpenSongAsync(r)"><span class="muted">@r.DisplayNumber</span> @r.Title <span class="muted">· @r.Collection</span></button>
+                                }
+                            </div>
+                        }
+                    </div>
+                    @if (_song is not null)
+                    {
+                        <b class="ellipsis">@_song.Title</b>
+                        <button disabled="@(_slide <= 0)" @onclick="() => GoSlide(-1)">◀</button>
+                        <span class="muted">slide @(_slide + 1)/@SongSlides.Count</span>
+                        <button disabled="@(_slide >= SongSlides.Count - 1)" @onclick="() => GoSlide(+1)">▶</button>
+                    }
+                </div>
+
+                @if (_song is not null && SongSlides.Count > 0)
+                {
+                    <div class="cfg-screen" @ref="_cfgRoot" data-picked="@PickName(_target)"
+                         style="@Bg(_slide == 0 ? BackgroundSlot.FirstSlide : BackgroundSlot.Slides, BackgroundSlot.Slides)">
+                        @if (_slide == 0)
+                        {
+                            <div class="cfg-title" data-t="title">@_song.Title</div>
+                        }
+                        <div class="cfg-lyrics @(_slide == 0 ? null : "full")" @ref="_fit1">
+                            <SlideText Text="@SongSlides[_slide]" Pickable="true" />
+                        </div>
+                    </div>
+                }
+            }
+            else if (_mode == Mode.Bible)
+            {
+                <div class="cfg-screen" style="@Bg(BackgroundSlot.Bible, BackgroundSlot.Slides)">
+                    <div class="@Cls(Target.BibleRef, "cfg-ref")" @onclick="() => Pick(Target.BibleRef)">João 3:16</div>
+                    <div class="cfg-verse @Cls(Target.BibleText)" @ref="_fit3" @onclick="() => Pick(Target.BibleText)">
+                        Porque Deus amou o mundo de tal maneira que deu o seu Filho unigênito, para que todo aquele que nele crê não pereça, mas tenha a vida eterna.
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="cfg-screen" style="@Bg(BackgroundSlot.General, BackgroundSlot.Slides)">
+                    <div class="cfg-clock @Cls(Target.Clock)" @onclick="() => Pick(Target.Clock)">00:05:00</div>
+                </div>
+            }
+        </div>
+
+        @* ---------------- Painel do elemento selecionado ---------------- *@
+        <div class="cfg-panel">
+            @if (_sel is not null)
+            {
+                <div class="cfg-selected text-sel">Selecionado: <b>“@_sel.Text”</b><br /><span class="muted small">só neste louvor · slide @(_slide + 1)</span></div>
+            }
+            else
+            {
+                <div class="cfg-selected">Selecionado: <b>@Label(_target)</b>@if (_mode == Mode.Song) { <br /><span class="muted small">todos os louvores</span> }</div>
+            }
+
+            <div class="cfg-group">
+                <div class="cfg-label">Cor @(_sel is not null ? "do texto selecionado" : "")</div>
+                <div class="swatches">
+                    @foreach (var (name, hex) in Palette)
+                    {
+                        var current = _sel is null && string.Equals(GetColor(_target), hex, StringComparison.OrdinalIgnoreCase);
+                        <button class="swatch @(current ? "on" : null)" style="background:@hex" title="@name" @onclick="() => OnSwatch(hex)">
+                            @if (current) { <span>✓</span> }
+                        </button>
+                    }
+                </div>
+                @if (_sel is not null)
+                {
+                    <div class="row"><button @onclick="() => ColorTextAsync(null)">Tirar a cor deste trecho</button>
+                        <button class="link" @onclick="ClearTextSelectionAsync">cancelar seleção</button></div>
+                }
+                else
+                {
+                    <div class="muted small">Cor atual: @PaletteName(GetColor(_target))</div>
+                }
+            </div>
+
+            @if (_sel is null && SizeOf(_target) is { } size)
+            {
+                <div class="cfg-group">
+                    <div class="cfg-label">Tamanho da letra</div>
+                    <div class="sizer">
+                        <button class="big" @onclick="() => ChangeSize(-1)" disabled="@(size <= 5)" title="Diminuir">A−</button>
+                        <span class="size-value">@size.ToString("0")</span>
+                        <button class="big" @onclick="() => ChangeSize(+1)" disabled="@(size >= 18)" title="Aumentar">A+</button>
+                    </div>
+                    <div class="muted small">Se a letra não couber no ecrã, diminui sozinha.</div>
+                </div>
+            }
+            else if (_target == Target.Title)
+            {
+                <div class="muted small">O título ajusta o tamanho sozinho à faixa.</div>
+            }
+
+            @if (_mode != Mode.Clock)
+            {
+                <div class="cfg-group">
+                    <div class="cfg-label">Fonte @(_mode == Mode.Song ? "dos louvores" : "da Bíblia")</div>
+                    <select @onchange="OnFont">
+                        @foreach (var f in FontChoices)
+                        {
+                            <option value="@f" selected="@(f == CurrentFont)" style="font-family:'@f'">@f</option>
+                        }
+                    </select>
+                </div>
+            }
+
+            @if (_mode == Mode.Song)
+            {
+                <div class="cfg-group toggles-row">
+                    <button class="toggle-btn @(_s.SongUppercase ? "on" : null)" @onclick="() => Apply(_s with { SongUppercase = !_s.SongUppercase })">AA Caixa alta</button>
+                    <button class="toggle-btn @(_s.SongBold ? "on" : null)" @onclick="() => Apply(_s with { SongBold = !_s.SongBold })"><b>N</b> Negrito</button>
+                    <button class="toggle-btn" @onclick='() => Apply(_s with { SongAlign = _s.SongAlign == "center" ? "block" : "center" })'>
+                        @(_s.SongAlign == "center" ? "☰ Linhas centradas" : "⯇ Bloco à esquerda")
+                    </button>
+                </div>
+            }
+            else if (_mode == Mode.Bible)
+            {
+                <div class="cfg-group toggles-row">
+                    <button class="toggle-btn" @onclick='() => Apply(_s with { BibleAlign = _s.BibleAlign == "left" ? "center" : "left" })'>
+                        @(_s.BibleAlign == "left" ? "⯇ Texto à esquerda" : "☰ Texto centrado")
+                    </button>
+                </div>
+            }
+
+            <div class="cfg-actions">
+                <button class="primary" disabled="@(!Pending)" @onclick="ApplyToScreen">✔ Aplicar no telão</button>
+                <button disabled="@(!Pending)" @onclick="Discard">Descartar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private enum Mode { Song, Bible, Clock }
+    private enum Target { Title, Lyrics, Chorus, Paren, Men, Women, BibleRef, BibleText, Clock }
+
+    private static readonly (string Name, string Hex)[] Palette =
+    [
+        ("Branco", "#ffffff"), ("Creme", "#fff3d6"), ("Amarelo", "#ffff00"), ("Amarelo claro", "#fff833"),
+        ("Dourado", "#f7d868"), ("Âmbar", "#ffc600"), ("Laranja", "#ff8c00"), ("Vermelho", "#ff3b30"),
+        ("Rosa", "#ff7eb6"), ("Verde", "#22c55e"), ("Verde claro", "#86efac"), ("Azul claro", "#7dd3fc"),
+        ("Azul", "#3b82f6"), ("Cinza claro", "#d1d5db"), ("Preto", "#000000")
+    ];
+
+    private ElementReference _fit1, _fit3, _cfgRoot;
+    private DotNetObjectReference<SettingsTab>? _selfRef;
+
+    // Louvor real na pré-visualização (e o rascunho da letra com cores por trecho)
+    private Projecao.Models.Song? _song;
+    private string _songLyrics = string.Empty;
+    private string _songOriginalLyrics = string.Empty;
+    private int _slide;
+    private string _songQuery = string.Empty;
+    private List<Projecao.Models.Song> _songResults = [];
+    private TextSel? _sel;
+
+    private sealed record TextSel(int StartLine, int StartOffset, int EndLine, int EndOffset, string Text);
+
+    private IReadOnlyList<string> SongSlides => SongMarkup.BuildSlides(_songLyrics);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var first = (await SongStore.SearchAsync("alto preco", take: 1)).FirstOrDefault()
+                    ?? (await SongStore.SearchAsync(null, take: 1)).FirstOrDefault();
+        if (first is not null) await OpenSongAsync(first);
+    }
+
+    private async Task SearchSongsAsync() =>
+        _songResults = string.IsNullOrWhiteSpace(_songQuery) ? [] : (await SongStore.SearchAsync(_songQuery, take: 8)).ToList();
+
+    private Task OpenSongAsync(Projecao.Models.Song song)
+    {
+        _song = song;
+        _songLyrics = _songOriginalLyrics = NormalizeLines(song.Lyrics);
+        _slide = 0;
+        _sel = null;
+        _songQuery = string.Empty;
+        _songResults = [];
+        return Task.CompletedTask;
+    }
+
+    private void GoSlide(int delta)
+    {
+        _slide = Math.Clamp(_slide + delta, 0, Math.Max(0, SongSlides.Count - 1));
+        _sel = null;
+    }
+
+    [JSInvokable]
+    public Task OnPickTarget(string type) => InvokeAsync(() =>
+    {
+        _sel = null;
+        _target = type switch
+        {
+            "title" => Target.Title, "chorus" => Target.Chorus, "paren" => Target.Paren,
+            "men" => Target.Men, "women" => Target.Women, _ => Target.Lyrics
+        };
+        StateHasChanged();
+    });
+
+    [JSInvokable]
+    public Task OnTextSelected(int startLine, int startOffset, int endLine, int endOffset, string text) => InvokeAsync(() =>
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        _sel = new TextSel(startLine, startOffset, endLine, endOffset, text.Length > 60 ? text[..60] + "…" : text);
+        StateHasChanged();
+    });
+
+    /// <summary>Colore só o trecho selecionado deste louvor (fica no rascunho até "Aplicar").</summary>
+    private async Task ColorTextAsync(string? hex)
+    {
+        if (_sel is null || _song is null) return;
+        var slides = SongSlides;
+        if (_slide >= slides.Count) return;
+
+        var oldStanza = slides[_slide];
+        var newStanza = SongMarkup.ApplyColor(oldStanza, _sel.StartLine, _sel.StartOffset, _sel.EndLine, _sel.EndOffset, hex);
+        _songLyrics = _songLyrics.Replace(oldStanza, newStanza);
+        _sel = null;
+        _appliedMessage = false;
+        await JS.InvokeVoidAsync("projecao.clearSelection");
+    }
+
+    private async Task ClearTextSelectionAsync()
+    {
+        _sel = null;
+        await JS.InvokeVoidAsync("projecao.clearSelection");
+    }
+
+    private static string NormalizeLines(string text) =>
+        string.Join('\n', text.Replace("\r\n", "\n").Split('\n').Select(l => l.TrimEnd())).Trim('\n');
+
+    private static string PickName(Target t) => t switch
+    {
+        Target.Title => "title", Target.Chorus => "chorus", Target.Paren => "paren",
+        Target.Men => "men", Target.Women => "women", _ => "lyrics"
+    };
+
+    public void Dispose() => _selfRef?.Dispose();
+
+    /// <summary>Depois de cada alteração, a miniatura reajusta o texto como o telão faz.</summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (_mode == Mode.Song && _song is not null)
+            {
+                _selfRef ??= DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("projecao.cfgBind", _cfgRoot, _selfRef);
+                await JS.InvokeVoidAsync("projecao.fitPreview", _fit1, _s.SongMaxSizePct);
+            }
+            else if (_mode == Mode.Bible)
+                await JS.InvokeVoidAsync("projecao.fitPreview", _fit3, _s.BibleMaxSizePct);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private ProjectionStyle _s = ProjectionStyle.Default;        // rascunho (o que se vê na pré-visualização)
+    private ProjectionStyle _applied = ProjectionStyle.Default;  // o que está no telão
+    private bool _appliedMessage;
+
+    private bool Pending => _s != _applied || _songLyrics != _songOriginalLyrics;
+    private Mode _mode = Mode.Song;
+    private Target _target = Target.Lyrics;
+
+
+    protected override void OnInitialized() => _s = _applied = Settings.ProjectionStyle;
+
+    private void SetMode(Mode mode)
+    {
+        _mode = mode;
+        _target = mode switch { Mode.Song => Target.Lyrics, Mode.Bible => Target.BibleText, _ => Target.Clock };
+    }
+
+    private void Pick(Target target) => _target = target;
+
+    /// <summary>Só muda o rascunho (pré-visualização da aba). O telão não é tocado.</summary>
+    private void Apply(ProjectionStyle style)
+    {
+        _s = style;
+        _appliedMessage = false;
+    }
+
+    private async Task ApplyToScreen()
+    {
+        _applied = _s;
+        Settings.ProjectionStyle = _s;
+        Projection.SetStyle(_s);
+
+        // Cores por trecho: grava a letra do louvor (atualiza-o na fila/telão se lá estiver).
+        if (_song is not null && _songLyrics != _songOriginalLyrics)
+        {
+            _song.Lyrics = _songLyrics;
+            _song = await SongStore.SaveAsync(_song);
+            _songOriginalLyrics = _songLyrics;
+        }
+        _appliedMessage = true;
+    }
+
+    private void Discard()
+    {
+        _s = _applied;
+        _songLyrics = _songOriginalLyrics;
+        _sel = null;
+        _appliedMessage = false;
+    }
+
+    private void Reset() => Apply(ProjectionStyle.Default);
+
+    private string GetColor(Target t) => t switch
+    {
+        Target.Title => _s.SongTitleColor,
+        Target.Lyrics => _s.SongColor,
+        Target.Chorus => _s.ChorusColor,
+        Target.Paren => _s.ParenColor,
+        Target.Men => _s.MenColor,
+        Target.Women => _s.WomenColor,
+        Target.BibleRef => _s.BibleRefColor,
+        Target.BibleText => _s.BibleColor,
+        _ => _s.ClockColor
+    };
+
+    private Task OnSwatch(string hex)
+    {
+        if (_sel is not null) return ColorTextAsync(hex);
+        SetColor(hex);
+        return Task.CompletedTask;
+    }
+
+    private void SetColor(string hex) => Apply(_target switch
+    {
+        Target.Title => _s with { SongTitleColor = hex },
+        Target.Lyrics => _s with { SongColor = hex },
+        Target.Chorus => _s with { ChorusColor = hex },
+        Target.Paren => _s with { ParenColor = hex },
+        Target.Men => _s with { MenColor = hex },
+        Target.Women => _s with { WomenColor = hex },
+        Target.BibleRef => _s with { BibleRefColor = hex },
+        Target.BibleText => _s with { BibleColor = hex },
+        _ => _s with { ClockColor = hex }
+    });
+
+    /// <summary>Letra, refrão, parênteses e vozes partilham o tamanho dos louvores; versículo tem o seu.</summary>
+    private double? SizeOf(Target t) => t switch
+    {
+        Target.Lyrics or Target.Chorus or Target.Paren or Target.Men or Target.Women => _s.SongMaxSizePct,
+        Target.BibleText => _s.BibleMaxSizePct,
+        _ => null
+    };
+
+    private void ChangeSize(int delta)
+    {
+        if (_target == Target.BibleText)
+            Apply(_s with { BibleMaxSizePct = Math.Clamp(_s.BibleMaxSizePct + delta, 5, 18) });
+        else
+            Apply(_s with { SongMaxSizePct = Math.Clamp(_s.SongMaxSizePct + delta, 5, 18) });
+    }
+
+    private string CurrentFont => _mode == Mode.Bible ? _s.BibleFont : _s.SongFont;
+
+    /// <summary>Lista curta: fontes comuns que existem neste computador (+ a atual).</summary>
+    private IEnumerable<string> FontChoices =>
+        FontService.Suggested.Where(Fonts.IsInstalled).Append(CurrentFont).Distinct(StringComparer.CurrentCultureIgnoreCase);
+
+    private void OnFont(ChangeEventArgs e)
+    {
+        var font = e.Value?.ToString() ?? string.Empty;
+        Apply(_mode == Mode.Bible ? _s with { BibleFont = font } : _s with { SongFont = font });
+    }
+
+    private string Cls(Target t, string extra = "") => $"pick {extra} {(t == _target ? "picked" : "")}".Trim();
+
+    private string Bg(params BackgroundSlot[] slots)
+    {
+        var bg = slots.Select(Gallery.GetBackground).FirstOrDefault(b => b is { IsVideo: false });
+        return bg is null ? "background: radial-gradient(ellipse at center, #1d3a6b 0%, #0b1733 70%, #050a18 100%)"
+                          : $"background-image:url('{bg.Url}')";
+    }
+
+    private static string Label(Target t) => t switch
+    {
+        Target.Title => "Título do louvor (na faixa)",
+        Target.Lyrics => "Letra",
+        Target.Chorus => "Refrão (CORO)",
+        Target.Paren => "Texto entre parênteses — (2X), (BIS)…",
+        Target.Men => "Voz dos homens — (H) / VARÕES",
+        Target.Women => "Voz das mulheres — (M) / SERVAS",
+        Target.BibleRef => "Referência (ex.: João 3:16)",
+        Target.BibleText => "Versículo",
+        _ => "Números do relógio/cronómetro"
+    };
+
+    private static string PaletteName(string hex) =>
+        Palette.FirstOrDefault(p => string.Equals(p.Hex, hex, StringComparison.OrdinalIgnoreCase)).Name ?? hex;
+}
