@@ -54,6 +54,7 @@
 .layout-song-first .slide {
     left: calc(2.14% + var(--safe-x, 0vw)); right: calc(3.7% + var(--safe-x, 0vw));
     top: 14.63%; bottom: calc(4.81% + var(--safe-y, 0vh));
+    min-width: 0;
 }
 
 /* Bíblia: referência na faixa (279,177 → 1851,286), versículo (88,310 → 1788,1026) */
@@ -64,16 +65,23 @@
 .layout-bible .slide {
     left: calc(4.58% + var(--safe-x, 0vw)); right: calc(6.88% + var(--safe-x, 0vw));
     top: 28.7%; bottom: calc(5% + var(--safe-y, 0vh));
+    min-width: 0;
 }
 
-.heading-box { justify-content: center; overflow: hidden; }
+.heading-box {
+    justify-content: center;
+    overflow: hidden;
+    min-width: 0;
+}
 .heading {
     width: 100%;
     white-space: nowrap;
     font-weight: 700;
     line-height: 1.1;
-    font-size: 6vh;
+    font-size: clamp(2.5vh, 4.5vh, 7vh);
     text-shadow: 0 .05em .15em rgba(0, 0, 0, .9);
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .layout-song-first .heading { text-transform: var(--song-transform, uppercase); text-align: center; color: var(--song-title-color, #fff3d6); font-family: var(--song-font); }
 .layout-bible .heading { text-align: left; color: var(--bible-ref-color, #ffff00); font-style: italic; font-family: var(--bible-font); }
