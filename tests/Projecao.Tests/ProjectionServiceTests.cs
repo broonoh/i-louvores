@@ -70,7 +70,9 @@ public class ProjectionServiceTests
         p.Stage(a);
         p.StartProjection();
         Assert.Equal(a.Id, p.State.CurrentItemId);
-        Assert.Single(p.State.Queue);
+        Assert.Equal(a, p.State.CurrentItem);
+        // Projetado diretamente, sem ＋ Adicionar: não entra na fila visível.
+        Assert.Empty(p.State.Queue);
     }
 
     [Fact]

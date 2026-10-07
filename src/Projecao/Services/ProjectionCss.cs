@@ -27,19 +27,44 @@ public static class ProjectionCss
             $"--song-men:{C(s.MenColor, d.MenColor)}",
             $"--song-women:{C(s.WomenColor, d.WomenColor)}",
             $"--song-title-color:{C(s.SongTitleColor, d.SongTitleColor)}",
+            $"--song-title-font:{F(s.SongTitleFont, SongFallback)}",
+            $"--song-title-align:{AlignKeyword(s.SongTitleAlign)}",
+            $"--song-title-top:{N(Math.Clamp(s.SongTitleTopPct, 0, 60))}%",
             $"--song-weight:{(s.SongBold ? 600 : 400)}",
             $"--song-transform:{(s.SongUppercase ? "uppercase" : "none")}",
-            $"--song-align:{(s.SongAlign == "center" ? "center" : "left")}",
+            $"--song-align:{AlignKeyword(s.SongAlign)}",
+            $"--song-line-height:{N(Math.Clamp(s.SongLineHeight, 1, 2))}",
             $"--bible-font:{F(s.BibleFont, BibleFallback)}",
             $"--bible-color:{C(s.BibleColor, d.BibleColor)}",
             $"--bible-ref-color:{C(s.BibleRefColor, d.BibleRefColor)}",
-            $"--bible-align:{(s.BibleAlign == "left" ? "left" : "center")}",
+            $"--bible-ref-font:{F(s.BibleRefFont, BibleFallback)}",
+            $"--bible-ref-align:{AlignKeyword(s.BibleRefAlign)}",
+            $"--bible-ref-top:{N(Math.Clamp(s.BibleRefTopPct, 0, 60))}%",
+            $"--bible-align:{AlignKeyword(s.BibleAlign)}",
+            $"--bible-line-height:{N(Math.Clamp(s.BibleLineHeight, 1, 2))}",
             $"--clock-color:{C(s.ClockColor, d.ClockColor)}",
             $"--song-max:{N(Math.Clamp(s.SongMaxSizePct, 3, 20))}",
-            $"--bible-max:{N(Math.Clamp(s.BibleMaxSizePct, 3, 20))}");
+            $"--bible-max:{N(Math.Clamp(s.BibleMaxSizePct, 3, 20))}",
+            $"--song-title-max:{N(Math.Clamp(s.SongTitleMaxSizePct, 3, 15))}",
+            $"--bible-ref-max:{N(Math.Clamp(s.BibleRefMaxSizePct, 3, 15))}");
     }
+
+    private static string AlignKeyword(string? align) => align switch
+    {
+        "center" => "center",
+        "right" => "right",
+        _ => "left"
+    };
 
     /// <summary>Tamanho máximo (em % da altura do ecrã) para o ajuste automático do texto deste slide.</summary>
     public static double MaxSizePct(ProjectionStyle s, ProjectionSlide slide) =>
         Math.Clamp(slide.Layout == SlideLayout.Bible ? s.BibleMaxSizePct : slide.Markup ? s.SongMaxSizePct : 11, 3, 20);
+
+    /// <summary>Tamanho máximo da faixa (título do louvor / referência bíblica) deste slide.</summary>
+    public static double HeadingMaxSizePct(ProjectionStyle s, ProjectionSlide slide) => slide.Layout switch
+    {
+        SlideLayout.Bible => Math.Clamp(s.BibleRefMaxSizePct, 3, 15),
+        SlideLayout.SongFirst => Math.Clamp(s.SongTitleMaxSizePct, 3, 15),
+        _ => 6
+    };
 }

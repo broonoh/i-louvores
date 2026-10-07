@@ -208,11 +208,15 @@
         }
 
         var item = QueueItemFactory.FromNoticeHtml(_current?.Title ?? "Aviso", _html, CssSafe.Color(_backColor), _current?.Id);
-        if (_projectedItemId is { } id && Projection.State.IndexOf(id) >= 0)
+        var state = Projection.State;
+        var alreadyShown = _projectedItemId is { } pid && (state.IndexOf(pid) >= 0 || state.AdHoc?.Id == pid);
+        if (alreadyShown)
         {
+            var id = _projectedItemId!.Value;
             item = item with { Id = id };
             Projection.ReplaceItem(item);
-            Projection.Select(id);
+            if (state.CurrentItemId != id)
+                Projection.Select(id);
             Projection.Refresh();
         }
         else

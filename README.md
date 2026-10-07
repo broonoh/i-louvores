@@ -1,9 +1,11 @@
-# I-LOUVORES — louvores, Bíblia e avisos em projetor ou TV (Linux)
+# I-LOUVORES — louvores, Bíblia e avisos em projetor ou TV (Linux e Windows)
 
-App desktop para **qualquer distribuição Linux** (X11 ou Wayland; KDE, GNOME, XFCE, Cinnamon…).
-Feito em .NET 9 + Blazor, com janelas nativas GTK/WebKit (Photino).
+App desktop para **qualquer distribuição Linux** (X11 ou Wayland; KDE, GNOME, XFCE, Cinnamon…) e para **Windows 10/11**.
+Feito em .NET 9 + Blazor, com janelas nativas (Photino: GTK/WebKit no Linux, WebView2 no Windows).
 
 ## Instalar (utilizador final)
+
+### Linux
 
 ```bash
 tar -xzf i-louvores-0.4.0-linux-x64.tar.gz
@@ -22,6 +24,23 @@ O pacote já inclui o .NET. Se faltar alguma coisa do sistema, o instalador most
 | openSUSE | `sudo zypper install libgtk-3-0 libwebkit2gtk-4_1-0` | `gstreamer-plugins-good gstreamer-plugins-libav` |
 
 Vídeos **WebM** funcionam sem codecs extra. Para desinstalar: `./install.sh --remover` (os dados ficam guardados).
+
+### Windows
+
+Pacote **portátil** (sem instalador, sem sudo/admin):
+
+```
+1. Extrair i-louvores-0.4.1-win-x64.zip (botão direito → Extrair tudo)
+2. Abrir a pasta extraída e executar i-louvores.exe
+```
+
+Requer o **WebView2 Runtime**, que já vem instalado de fábrica no Windows 10 (a partir da versão 1803) e no Windows 11.
+Se faltar (raro, ex.: Windows 10 LTSC), o Windows pede para instalar automaticamente, ou pode ser obtido em
+`developer.microsoft.com/microsoft-edge/webview2`. Vídeos MP4 e WebM funcionam sem nada extra (o WebView2 já traz os codecs).
+
+Os dados (base de dados, Galeria, configuração) ficam em `%LocalAppData%\i-louvores` e `Documentos\I-LOUVORES`,
+tal como no Linux. Para desinstalar: apagar a pasta onde foi extraído (os dados continuam guardados; para os remover
+também, apagar as duas pastas acima).
 
 ## Levar para outro computador
 
@@ -183,7 +202,27 @@ dotnet test tests/Projecao.Tests         # testes
 packaging/build.sh                       # gera dist/i-louvores-<versão>-linux-x64.tar.gz
 packaging/build.sh --completo            # + louvores, Bíblias, configuração e Galeria deste PC
 packaging/build.sh linux-arm64           # Raspberry Pi 4/5
+packaging/build.sh win-x64               # gera dist/i-louvores-<versão>-win-x64.zip (cross-compila a partir do Linux)
 ```
+
+### Camada Desktop por sistema
+
+A camada `Desktop/` tem uma implementação por SO das partes que não são cross-platform (monitores/fullscreen,
+protetor de ecrã, identidade da janela), escolhida em runtime (`OperatingSystem.IsWindows()`), sem multi-targeting:
+
+| Papel | Linux | Windows |
+|---|---|---|
+| Monitores + fullscreen num monitor | `Gtk.cs` (GTK3/GDK3) | `Win32.cs` (user32) |
+| `IDisplayService` | `GtkDisplayService` | `Win32DisplayService` |
+| Inibir protetor de ecrã | `ScreenSaverInhibitor` (D-Bus) | `Win32ScreenSaverInhibitor` (`SetThreadExecutionState`) |
+| Identidade da janela / `.desktop` | `DesktopIntegration` | não aplicável (no-op) |
+
+O `Projecao.csproj` não precisa de `Condition` por RID: os ficheiros Windows compilam sempre (P/Invoke só falha se
+chamado, e as chamadas ficam atrás de `OperatingSystem.IsWindows()`), o que manteve o `dotnet publish -r win-x64`
+a funcionar sem alterações ao `.csproj`.
+
+**Ainda por validar num Windows real** (feito por cross-compilação aqui, nunca executado): posicionamento do
+fullscreen em múltiplos monitores com DPI diferente, `SetThreadExecutionState`, e o ícone da janela/barra de tarefas.
 
 Em Debug, o log mostra a URL do painel com token, útil para depurar num browser.
 
@@ -199,4 +238,4 @@ Em Debug, o log mostra a URL do painel com token, útil para depurar num browser
 
 ## Próximos passos
 1. Flatpak (Flathub) como alternativa ao tar.gz
-2. Versão para Windows
+2. Validar a versão Windows numa máquina real (ver nota em "Camada Desktop por sistema") e, se fizer sentido, um instalador `.exe`

@@ -52,7 +52,10 @@ internal static class DesktopHost
             .Load(access.WithToken($"{baseUrl}/"));
 
         AppIcon.Apply(panel);
-        app.Services.GetRequiredService<GtkDisplayService>().Attach(panel, PanelTitle);
+        if (OperatingSystem.IsWindows())
+            app.Services.GetRequiredService<Win32DisplayService>().Attach(panel, PanelTitle);
+        else
+            app.Services.GetRequiredService<GtkDisplayService>().Attach(panel, PanelTitle);
 
         // SIGTERM/SIGINT (terminar sessão, desligar, Ctrl+C): o ASP.NET pára o servidor,
         // mas a janela GTK mantém a thread principal presa — fechamo-la explicitamente.
@@ -106,11 +109,20 @@ internal static class DesktopHost
         services.AddSingleton<FontService>();
         services.AddSingleton<LocalAccess>();
         services.AddSingleton<ServerInfo>();
-        services.AddSingleton<GtkDisplayService>();
-        services.AddSingleton<IDisplayService>(sp => sp.GetRequiredService<GtkDisplayService>());
+        if (OperatingSystem.IsWindows())
+        {
+            services.AddSingleton<Win32DisplayService>();
+            services.AddSingleton<IDisplayService>(sp => sp.GetRequiredService<Win32DisplayService>());
+            services.AddHostedService<Win32ScreenSaverInhibitor>();
+        }
+        else
+        {
+            services.AddSingleton<GtkDisplayService>();
+            services.AddSingleton<IDisplayService>(sp => sp.GetRequiredService<GtkDisplayService>());
+            services.AddHostedService<ScreenSaverInhibitor>();
+        }
         services.AddSingleton<ProjectorProcessManager>();
         services.AddSingleton<IProjectionWindowManager>(sp => sp.GetRequiredService<ProjectorProcessManager>());
-        services.AddHostedService<ScreenSaverInhibitor>();
 
         services.AddRazorComponents().AddInteractiveServerComponents();
 

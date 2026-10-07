@@ -158,11 +158,13 @@ window.projecao = (() => {
 
     // Pré-visualização (aba Configuração): mesmo ajuste do telão, mas relativo à miniatura.
     // maxPct = tamanho máximo em % da altura do "ecrã" (a miniatura 16:9).
-    function fitPreview(el, maxPct) {
+    // maxWFrac = fração da largura do ecrã disponível para o texto (0.94 = quase a largura toda;
+    // menor para faixas estreitas, como o título/referência, que não ocupam o ecrã inteiro).
+    function fitPreview(el, maxPct, maxWFrac) {
         if (!el) return;
         const screen = el.closest('.cfg-screen');
         if (!screen) return;
-        const maxW = screen.clientWidth * 0.94, maxH = el.clientHeight || screen.clientHeight * 0.8;
+        const maxW = screen.clientWidth * (maxWFrac > 0 ? maxWFrac : 0.94), maxH = el.clientHeight || screen.clientHeight * 0.8;
         let lo = 4, hi = Math.max(4, Math.round(screen.clientHeight * maxPct / 100)), best = lo;
         while (lo <= hi) {
             const mid = (lo + hi) >> 1;

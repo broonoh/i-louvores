@@ -210,7 +210,8 @@ public class BibleServiceTests : IDisposable
         Assert.Equal("João 3:36", projection.State.Live.Slide?.Heading);
         projection.Next();
         Assert.Equal("João 4:1", projection.State.Live.Slide?.Heading);
-        Assert.Single(projection.State.Queue);
+        // Projetado diretamente (ProjectNow), sem ＋ Adicionar: não entra na fila visível.
+        Assert.Empty(projection.State.Queue);
         Assert.Equal(joao3.Id, projection.State.CurrentItemId);
         Assert.StartsWith("João 4", projection.State.CurrentItem!.Title);
 

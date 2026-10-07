@@ -20,6 +20,9 @@ internal static class DesktopIntegration
 
     public static void Apply(ILogger? logger = null)
     {
+        if (OperatingSystem.IsWindows())
+            return; // sem GTK/Wayland: o ícone da janela já vem do .exe/AppIcon, sem atalho a registar aqui
+
         SetProgramIdentity();
         try
         {
@@ -32,7 +35,11 @@ internal static class DesktopIntegration
     }
 
     /// <summary>Processo do projetor: só a identidade (o registo já foi feito pelo painel).</summary>
-    public static void SetIdentityOnly() => SetProgramIdentity();
+    public static void SetIdentityOnly()
+    {
+        if (!OperatingSystem.IsWindows())
+            SetProgramIdentity();
+    }
 
     /// <summary>Tem de correr ANTES de o GTK ser inicializado (antes da 1.ª PhotinoWindow).</summary>
     private static void SetProgramIdentity()

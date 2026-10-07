@@ -38,7 +38,7 @@ internal static class ProjectorHost
 
         window.RegisterWindowCreatedHandler((_, _) =>
         {
-            Gtk.FullscreenOnMonitorAt(Gtk.FindWindowByTitle(WindowTitle), x, y);
+            FullscreenOnMonitorAt(window, x, y);
             StartCommandReader(window);
         });
 
@@ -58,7 +58,7 @@ internal static class ProjectorHost
                     && int.TryParse(xs, CultureInfo.InvariantCulture, out var nx)
                     && int.TryParse(ys, CultureInfo.InvariantCulture, out var ny))
                 {
-                    window.Invoke(() => Gtk.FullscreenOnMonitorAt(Gtk.FindWindowByTitle(WindowTitle), nx, ny));
+                    window.Invoke(() => FullscreenOnMonitorAt(window, nx, ny));
                 }
                 else if (parts is ["close"])
                 {
@@ -74,6 +74,18 @@ internal static class ProjectorHost
             Name = "projector-stdin"
         };
         reader.Start();
+    }
+
+    /// <summary>
+    /// No Windows o Photino expõe <c>WindowHandle</c> diretamente; no Linux é preciso
+    /// procurar a GtkWindow pelo título (ver <see cref="Gtk.FindWindowByTitle"/>).
+    /// </summary>
+    private static void FullscreenOnMonitorAt(PhotinoWindow window, int x, int y)
+    {
+        if (OperatingSystem.IsWindows())
+            Win32.FullscreenOnMonitorAt(window.WindowHandle, x, y);
+        else
+            Gtk.FullscreenOnMonitorAt(Gtk.FindWindowByTitle(WindowTitle), x, y);
     }
 
     private static string? Arg(string[] args, string name)

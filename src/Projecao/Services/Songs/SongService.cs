@@ -78,7 +78,13 @@ public sealed class SongService(IDbContextFactory<AppDbContext> dbFactory, Proje
     /// <summary>Letra corrigida → o item na fila (e o projetor, se estiver no ar) passa a mostrar a versão nova.</summary>
     private void RefreshInQueue(Song song)
     {
-        foreach (var item in projection.State.Queue.Where(q => q.Kind == ProjectionContentKind.Song && q.SourceId == song.Id).ToList())
+        bool Matches(QueueItem q) => q.Kind == ProjectionContentKind.Song && q.SourceId == song.Id;
+        var state = projection.State;
+        var candidates = state.Queue.Where(Matches);
+        if (state.AdHoc is { } adHoc && Matches(adHoc))
+            candidates = candidates.Append(adHoc);
+
+        foreach (var item in candidates.ToList())
         {
             var fresh = QueueItemFactory.FromSong(song, media.Resolve(song.BackgroundFile), media.Resolve(song.FirstSlideBackgroundFile));
             projection.ReplaceItem(fresh with { Id = item.Id });

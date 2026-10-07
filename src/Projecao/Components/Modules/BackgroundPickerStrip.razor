@@ -1,0 +1,39 @@
+@* Faixa de miniaturas para escolher o fundo de um papel (aba Configuração): aplica já na Galeria. *@
+@inject MediaLibraryService Media
+@inject GalleryService Gallery
+
+<div class="cfg-bg-row">
+    <span class="cfg-bg-label">@Label</span>
+    <div class="cfg-bg-strip">
+        <button class="cfg-bg-thumb none @(Selected is null ? "on" : null)" title="Sem fundo próprio neste papel" @onclick="() => Pick(null)">Nenhum</button>
+        @foreach (var file in Media.List())
+        {
+            <button class="cfg-bg-thumb thumb small @(Selected == file.RelativePath ? "on" : null)" title="@file.Name" @onclick="() => Pick(file.RelativePath)">
+                <MediaThumb File="file" />
+            </button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public BackgroundSlot Slot { get; set; }
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+
+    /// <summary>Disparado depois de mudar o fundo — o chamador decide se precisa de reajustar a pré-visualização.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private string? Selected => Gallery.GetSelection(Slot);
+
+    private async Task Pick(string? path)
+    {
+        try
+        {
+            Gallery.Select(Slot, path);
+        }
+        catch (FileNotFoundException)
+        {
+            // Ficheiro removido da Galeria entretanto; a lista recarrega no próximo render.
+        }
+        await Changed.InvokeAsync();
+    }
+}

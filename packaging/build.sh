@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Gera o pacote distribuível: dist/i-louvores-<versão>-<rid>.tar.gz
-#   packaging/build.sh               → linux-x64
+# Gera o pacote distribuível:
+#   packaging/build.sh               → dist/i-louvores-<versão>-linux-x64.tar.gz
 #   packaging/build.sh linux-arm64   → Raspberry Pi 4/5 e outros ARM 64-bit
+#   packaging/build.sh win-x64       → dist/i-louvores-<versão>-win-x64.zip (portátil: extrai e corre, sem instalador)
 #   packaging/build.sh --completo    → inclui os louvores, as versões da Bíblia e a configuração deste PC
-#                                      (dist/i-louvores-<versão>-<rid>-completo.tar.gz — só para uso interno da igreja)
+#                                      (dist/i-louvores-<versão>-<rid>-completo.* — só para uso interno da igreja)
 set -euo pipefail
 
 RID="linux-x64"
@@ -14,13 +15,16 @@ for arg in "$@"; do
         *) RID="$arg" ;;
     esac
 done
+WINDOWS=0
+[[ "$RID" == win-* ]] && WINDOWS=1
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(grep -oP '(?<=<Version>)[^<]+' "$ROOT/src/Projecao/Projecao.csproj")"
 NAME="i-louvores-$VERSION-$RID"
 (( FULL )) && NAME="$NAME-completo"
 OUT="$ROOT/dist/$NAME"
 
-rm -rf "$OUT" "$ROOT/dist/$NAME.tar.gz"
+rm -rf "$OUT" "$ROOT/dist/$NAME.tar.gz" "$ROOT/dist/$NAME.zip"
 mkdir -p "$OUT"
 
 # Self-contained: inclui o runtime .NET — o utilizador não precisa de instalar .NET.
@@ -29,8 +33,12 @@ dotnet publish "$ROOT/src/Projecao/Projecao.csproj" \
     -p:DebugType=none -p:InvariantGlobalization=false \
     -o "$OUT/app"
 
-cp "$ROOT/packaging/install.sh" "$ROOT/packaging/i-louvores.desktop" "$OUT/"
-cp -r "$ROOT/packaging/icons" "$OUT/"
+if (( WINDOWS )); then
+    : # zip portátil: sem install.sh/.desktop (o Windows usa o ícone do .exe, sem atalho a registar aqui)
+else
+    cp "$ROOT/packaging/install.sh" "$ROOT/packaging/i-louvores.desktop" "$OUT/"
+    cp -r "$ROOT/packaging/icons" "$OUT/"
+fi
 
 if (( FULL )); then
     DATA="${XDG_DATA_HOME:-$HOME/.local/share}/i-louvores"
@@ -46,5 +54,10 @@ if (( FULL )); then
     echo "Dados incluídos: $(sqlite3 "$OUT/dados/i-louvores.db" "select count(*) from Songs") louvores;" \
          "Bíblias: $(sqlite3 "$OUT/dados/i-louvores.db" "select group_concat(Abbreviation, ', ') from BibleVersions")"
 fi
-tar -C "$ROOT/dist" -czf "$ROOT/dist/$NAME.tar.gz" "$NAME"
-echo "Pacote: dist/$NAME.tar.gz ($(du -h "$ROOT/dist/$NAME.tar.gz" | cut -f1))"
+if (( WINDOWS )); then
+    (cd "$ROOT/dist" && zip -rq "$NAME.zip" "$NAME")
+    echo "Pacote: dist/$NAME.zip ($(du -h "$ROOT/dist/$NAME.zip" | cut -f1))"
+else
+    tar -C "$ROOT/dist" -czf "$ROOT/dist/$NAME.tar.gz" "$NAME"
+    echo "Pacote: dist/$NAME.tar.gz ($(du -h "$ROOT/dist/$NAME.tar.gz" | cut -f1))"
+fi

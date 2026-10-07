@@ -16,7 +16,7 @@
     var solidBack = CssSafe.Color(slide?.Style?.BackColor);
 }
 
-<div class="stage @(Projection.State.Style.SongAlign == "center" ? "song-center" : null)"
+<div class="stage @SongAlignClass(Projection.State.Style.SongAlign)"
      style="--safe-x:@(safe)vw; --safe-y:@(safe)vh; @ProjectionCss.Vars(Projection.State.Style)">
     @if (!live.IsBlank && live.Overlay != OverlayMode.None && live.OverlayFullScreen)
     {
@@ -146,7 +146,8 @@
                     await JS.InvokeVoidAsync("projecao.fitText", _textRef, slide.Style?.FontSizePx ?? 0, 0,
                         ProjectionCss.MaxSizePct(Projection.State.Style, slide));
                 if (!string.IsNullOrWhiteSpace(slide.Heading))
-                    await JS.InvokeVoidAsync("projecao.fitText", _headingRef, 0, 0);
+                    await JS.InvokeVoidAsync("projecao.fitText", _headingRef, 0, 0,
+                        ProjectionCss.HeadingMaxSizePct(Projection.State.Style, slide));
             }
         }
         catch (JSDisconnectedException)
@@ -163,6 +164,13 @@
     public void OnHotkey(string action) => Projection.ExecuteHotkey(action);
 
     private void HandleStateChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private static string? SongAlignClass(string align) => align switch
+    {
+        "center" => "song-center",
+        "right" => "song-right",
+        _ => null
+    };
 
     private static string LayoutClass(SlideLayout layout) => layout switch
     {

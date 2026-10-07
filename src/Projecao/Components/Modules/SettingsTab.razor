@@ -8,6 +8,7 @@
 @inject SettingsStore Settings
 @inject FontService Fonts
 @inject GalleryService Gallery
+@inject MediaLibraryService Media
 @inject IJSRuntime JS
 @inject SongService SongStore
 @implements IDisposable
@@ -72,16 +73,20 @@
                         <button disabled="@(_slide <= 0)" @onclick="() => GoSlide(-1)">◀</button>
                         <span class="muted">slide @(_slide + 1)/@SongSlides.Count</span>
                         <button disabled="@(_slide >= SongSlides.Count - 1)" @onclick="() => GoSlide(+1)">▶</button>
+                        <button class="primary" @onclick="ProjectPreviewSong" title="Esta pré-visualização é só um rascunho — clique aqui para pôr ESTE louvor no telão de verdade">▶ Projetar no telão</button>
                     }
+                </div>
+                <div class="muted small cfg-preview-note">
+                    Esta tela é uma pré-visualização separada do telão. Cor/fonte/tamanho só valem para todos os louvores depois de "Aplicar no telão" — mas o louvor mostrado aqui só vai pro telão se você clicar em "▶ Projetar no telão".
                 </div>
 
                 @if (_song is not null && SongSlides.Count > 0)
                 {
                     <div class="cfg-screen" @ref="_cfgRoot" data-picked="@PickName(_target)"
-                         style="@Bg(_slide == 0 ? BackgroundSlot.FirstSlide : BackgroundSlot.Slides, BackgroundSlot.Slides)">
+                         style="@SongBg()">
                         @if (_slide == 0)
                         {
-                            <div class="cfg-title" data-t="title">@_song.Title</div>
+                            <div class="cfg-title" data-t="title" @ref="_fitTitle" style="justify-content:@JustifyFor(_s.SongTitleAlign)">@_song.Title</div>
                         }
                         <div class="cfg-lyrics @(_slide == 0 ? null : "full")" @ref="_fit1">
                             <SlideText Text="@SongSlides[_slide]" Pickable="true" />
@@ -92,7 +97,7 @@
             else if (_mode == Mode.Bible)
             {
                 <div class="cfg-screen" style="@Bg(BackgroundSlot.Bible, BackgroundSlot.Slides)">
-                    <div class="@Cls(Target.BibleRef, "cfg-ref")" @onclick="() => Pick(Target.BibleRef)">João 3:16</div>
+                    <div class="@Cls(Target.BibleRef, "cfg-ref")" @ref="_fitRef" style="justify-content:@JustifyFor(_s.BibleRefAlign)" @onclick="() => Pick(Target.BibleRef)">João 3:16</div>
                     <div class="cfg-verse @Cls(Target.BibleText)" @ref="_fit3" @onclick="() => Pick(Target.BibleText)">
                         Porque Deus amou o mundo de tal maneira que deu o seu Filho unigênito, para que todo aquele que nele crê não pereça, mas tenha a vida eterna.
                     </div>
@@ -141,25 +146,49 @@
 
             @if (_sel is null && SizeOf(_target) is { } size)
             {
+                var (min, max) = SizeRange(_target);
                 <div class="cfg-group">
                     <div class="cfg-label">Tamanho da letra</div>
                     <div class="sizer">
-                        <button class="big" @onclick="() => ChangeSize(-1)" disabled="@(size <= 5)" title="Diminuir">A−</button>
+                        <button class="big" @onclick="() => ChangeSize(-1)" disabled="@(size <= min)" title="Diminuir">A−</button>
                         <span class="size-value">@size.ToString("0")</span>
-                        <button class="big" @onclick="() => ChangeSize(+1)" disabled="@(size >= 18)" title="Aumentar">A+</button>
+                        <button class="big" @onclick="() => ChangeSize(+1)" disabled="@(size >= max)" title="Aumentar">A+</button>
                     </div>
                     <div class="muted small">Se a letra não couber no ecrã, diminui sozinha.</div>
                 </div>
             }
-            else if (_target == Target.Title)
+
+            @if (_sel is null && _target is Target.Lyrics or Target.Chorus or Target.Paren or Target.Men or Target.Women or Target.BibleText)
             {
-                <div class="muted small">O título ajusta o tamanho sozinho à faixa.</div>
+                <div class="cfg-group">
+                    <div class="cfg-label">Espaçamento entre linhas</div>
+                    <input type="range" class="cfg-slider" min="1" max="2" step="0.05" value="@LineHeight" @oninput="OnLineHeightInput" />
+                    <div class="muted small">@LineHeight.ToString("0.00")× a altura da letra</div>
+                </div>
+            }
+
+            @if (_sel is null && _target is Target.Title or Target.BibleRef)
+            {
+                <div class="cfg-group">
+                    <div class="cfg-label">Alinhamento @(_target == Target.Title ? "do título" : "da referência")</div>
+                    <div class="segmented" role="group">
+                        <button class="@(HeadingAlign == "left" ? "active" : null)" @onclick='() => SetHeadingAlign("left")'>⯇ Esquerda</button>
+                        <button class="@(HeadingAlign == "center" ? "active" : null)" @onclick='() => SetHeadingAlign("center")'>☰ Centro</button>
+                        <button class="@(HeadingAlign == "right" ? "active" : null)" @onclick='() => SetHeadingAlign("right")'>⯈ Direita</button>
+                    </div>
+                </div>
+
+                <div class="cfg-group">
+                    <div class="cfg-label">Posição vertical @(_target == Target.Title ? "do título" : "da referência")</div>
+                    <input type="range" class="cfg-slider" min="0" max="50" step="0.5" value="@HeadingTop" @oninput="OnHeadingTopInput" />
+                    <div class="muted small">@HeadingTop.ToString("0.0")% do topo da tela — arraste até encaixar na faixa colorida do fundo escolhido.</div>
+                </div>
             }
 
             @if (_mode != Mode.Clock)
             {
                 <div class="cfg-group">
-                    <div class="cfg-label">Fonte @(_mode == Mode.Song ? "dos louvores" : "da Bíblia")</div>
+                    <div class="cfg-label">Fonte @FontLabel(_target)</div>
                     <select @onchange="OnFont">
                         @foreach (var f in FontChoices)
                         {
@@ -171,20 +200,40 @@
 
             @if (_mode == Mode.Song)
             {
+                <div class="cfg-group">
+                    <div class="cfg-label">Fundo</div>
+                    <BackgroundPickerStrip Slot="BackgroundSlot.FirstSlide" Label="1.º slide" Changed="StateHasChanged" />
+                    <BackgroundPickerStrip Slot="BackgroundSlot.Slides" Label="Restantes slides" Changed="StateHasChanged" />
+                </div>
+
+                <div class="cfg-group">
+                    <div class="cfg-label">Alinhamento da letra</div>
+                    <div class="segmented" role="group">
+                        <button class="@(_s.SongAlign is "block" or null ? "active" : null)" @onclick='() => Apply(_s with { SongAlign = "block" })'>⯇ Esquerda</button>
+                        <button class="@(_s.SongAlign == "center" ? "active" : null)" @onclick='() => Apply(_s with { SongAlign = "center" })'>☰ Centro</button>
+                        <button class="@(_s.SongAlign == "right" ? "active" : null)" @onclick='() => Apply(_s with { SongAlign = "right" })'>⯈ Direita</button>
+                    </div>
+                </div>
+
                 <div class="cfg-group toggles-row">
                     <button class="toggle-btn @(_s.SongUppercase ? "on" : null)" @onclick="() => Apply(_s with { SongUppercase = !_s.SongUppercase })">AA Caixa alta</button>
                     <button class="toggle-btn @(_s.SongBold ? "on" : null)" @onclick="() => Apply(_s with { SongBold = !_s.SongBold })"><b>N</b> Negrito</button>
-                    <button class="toggle-btn" @onclick='() => Apply(_s with { SongAlign = _s.SongAlign == "center" ? "block" : "center" })'>
-                        @(_s.SongAlign == "center" ? "☰ Linhas centradas" : "⯇ Bloco à esquerda")
-                    </button>
                 </div>
             }
             else if (_mode == Mode.Bible)
             {
-                <div class="cfg-group toggles-row">
-                    <button class="toggle-btn" @onclick='() => Apply(_s with { BibleAlign = _s.BibleAlign == "left" ? "center" : "left" })'>
-                        @(_s.BibleAlign == "left" ? "⯇ Texto à esquerda" : "☰ Texto centrado")
-                    </button>
+                <div class="cfg-group">
+                    <div class="cfg-label">Fundo</div>
+                    <BackgroundPickerStrip Slot="BackgroundSlot.Bible" Label="Bíblia" Changed="StateHasChanged" />
+                </div>
+
+                <div class="cfg-group">
+                    <div class="cfg-label">Alinhamento do versículo</div>
+                    <div class="segmented" role="group">
+                        <button class="@(_s.BibleAlign == "left" ? "active" : null)" @onclick='() => Apply(_s with { BibleAlign = "left" })'>⯇ Esquerda</button>
+                        <button class="@(_s.BibleAlign is "center" or null ? "active" : null)" @onclick='() => Apply(_s with { BibleAlign = "center" })'>☰ Centro</button>
+                        <button class="@(_s.BibleAlign == "right" ? "active" : null)" @onclick='() => Apply(_s with { BibleAlign = "right" })'>⯈ Direita</button>
+                    </div>
                 </div>
             }
 
@@ -208,7 +257,7 @@
         ("Azul", "#3b82f6"), ("Cinza claro", "#d1d5db"), ("Preto", "#000000")
     ];
 
-    private ElementReference _fit1, _fit3, _cfgRoot;
+    private ElementReference _fit1, _fit3, _cfgRoot, _fitTitle, _fitRef;
     private DotNetObjectReference<SettingsTab>? _selfRef;
 
     // Louvor real na pré-visualização (e o rascunho da letra com cores por trecho)
@@ -249,6 +298,16 @@
     {
         _slide = Math.Clamp(_slide + delta, 0, Math.Max(0, SongSlides.Count - 1));
         _sel = null;
+    }
+
+    /// <summary>Põe no telão de verdade o louvor que está sendo pré-visualizado aqui (sem precisar ir à aba Louvores).</summary>
+    private void ProjectPreviewSong()
+    {
+        if (_song is null)
+            return;
+
+        var item = QueueItemFactory.FromSong(_song, Media.Resolve(_song.BackgroundFile), Media.Resolve(_song.FirstSlideBackgroundFile));
+        Projection.ProjectNow(item, _slide);
     }
 
     [JSInvokable]
@@ -313,9 +372,14 @@
                 _selfRef ??= DotNetObjectReference.Create(this);
                 await JS.InvokeVoidAsync("projecao.cfgBind", _cfgRoot, _selfRef);
                 await JS.InvokeVoidAsync("projecao.fitPreview", _fit1, _s.SongMaxSizePct);
+                if (_slide == 0)
+                    await JS.InvokeVoidAsync("projecao.fitPreview", _fitTitle, _s.SongTitleMaxSizePct, 0.78);
             }
             else if (_mode == Mode.Bible)
+            {
                 await JS.InvokeVoidAsync("projecao.fitPreview", _fit3, _s.BibleMaxSizePct);
+                await JS.InvokeVoidAsync("projecao.fitPreview", _fitRef, _s.BibleRefMaxSizePct, 0.80);
+            }
         }
         catch (JSDisconnectedException) { }
     }
@@ -405,23 +469,49 @@
         _ => _s with { ClockColor = hex }
     });
 
-    /// <summary>Letra, refrão, parênteses e vozes partilham o tamanho dos louvores; versículo tem o seu.</summary>
+    /// <summary>Letra, refrão, parênteses e vozes partilham o tamanho dos louvores; título, versículo e referência têm o seu.</summary>
     private double? SizeOf(Target t) => t switch
     {
         Target.Lyrics or Target.Chorus or Target.Paren or Target.Men or Target.Women => _s.SongMaxSizePct,
+        Target.Title => _s.SongTitleMaxSizePct,
         Target.BibleText => _s.BibleMaxSizePct,
+        Target.BibleRef => _s.BibleRefMaxSizePct,
         _ => null
+    };
+
+    private static (double Min, double Max) SizeRange(Target t) => t switch
+    {
+        Target.Title or Target.BibleRef => (3, 15),
+        _ => (5, 18)
     };
 
     private void ChangeSize(int delta)
     {
-        if (_target == Target.BibleText)
-            Apply(_s with { BibleMaxSizePct = Math.Clamp(_s.BibleMaxSizePct + delta, 5, 18) });
-        else
-            Apply(_s with { SongMaxSizePct = Math.Clamp(_s.SongMaxSizePct + delta, 5, 18) });
+        var (min, max) = SizeRange(_target);
+        Apply(_target switch
+        {
+            Target.Title => _s with { SongTitleMaxSizePct = Math.Clamp(_s.SongTitleMaxSizePct + delta, min, max) },
+            Target.BibleText => _s with { BibleMaxSizePct = Math.Clamp(_s.BibleMaxSizePct + delta, min, max) },
+            Target.BibleRef => _s with { BibleRefMaxSizePct = Math.Clamp(_s.BibleRefMaxSizePct + delta, min, max) },
+            _ => _s with { SongMaxSizePct = Math.Clamp(_s.SongMaxSizePct + delta, min, max) }
+        });
     }
 
-    private string CurrentFont => _mode == Mode.Bible ? _s.BibleFont : _s.SongFont;
+    /// <summary>Título e referência têm fonte própria; a letra e o versículo partilham a fonte do módulo.</summary>
+    private string CurrentFont => _target switch
+    {
+        Target.Title => _s.SongTitleFont,
+        Target.BibleRef => _s.BibleRefFont,
+        _ => _mode == Mode.Bible ? _s.BibleFont : _s.SongFont
+    };
+
+    private static string FontLabel(Target t) => t switch
+    {
+        Target.Title => "do título",
+        Target.BibleRef => "da referência",
+        Target.BibleText => "da Bíblia",
+        _ => "dos louvores"
+    };
 
     /// <summary>Lista curta: fontes comuns que existem neste computador (+ a atual).</summary>
     private IEnumerable<string> FontChoices =>
@@ -430,8 +520,50 @@
     private void OnFont(ChangeEventArgs e)
     {
         var font = e.Value?.ToString() ?? string.Empty;
-        Apply(_mode == Mode.Bible ? _s with { BibleFont = font } : _s with { SongFont = font });
+        Apply(_target switch
+        {
+            Target.Title => _s with { SongTitleFont = font },
+            Target.BibleRef => _s with { BibleRefFont = font },
+            _ => _mode == Mode.Bible ? _s with { BibleFont = font } : _s with { SongFont = font }
+        });
     }
+
+    /// <summary>Alinhamento do título (louvor) ou da referência (Bíblia) — faixa superior, não a letra/versículo.</summary>
+    private string HeadingAlign => _target == Target.Title ? _s.SongTitleAlign : _s.BibleRefAlign;
+
+    private void SetHeadingAlign(string align) => Apply(_target == Target.Title
+        ? _s with { SongTitleAlign = align }
+        : _s with { BibleRefAlign = align });
+
+    /// <summary>Espaçamento entre linhas da letra (louvor) ou do versículo (Bíblia).</summary>
+    private double LineHeight => _target == Target.BibleText ? _s.BibleLineHeight : _s.SongLineHeight;
+
+    private void OnLineHeightInput(ChangeEventArgs e)
+    {
+        if (!double.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v))
+            return;
+        v = Math.Clamp(v, 1, 2);
+        Apply(_target == Target.BibleText ? _s with { BibleLineHeight = v } : _s with { SongLineHeight = v });
+    }
+
+    /// <summary>Posição vertical (topo da faixa, em % da altura do ecrã) do título (louvor) ou da referência (Bíblia).</summary>
+    private double HeadingTop => _target == Target.Title ? _s.SongTitleTopPct : _s.BibleRefTopPct;
+
+    private void OnHeadingTopInput(ChangeEventArgs e)
+    {
+        if (!double.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v))
+            return;
+        v = Math.Clamp(v, 0, 50);
+        Apply(_target == Target.Title ? _s with { SongTitleTopPct = v } : _s with { BibleRefTopPct = v });
+    }
+
+    /// <summary>Alinhamento → posição do texto na faixa (flex) na pré-visualização.</summary>
+    private static string JustifyFor(string align) => align switch
+    {
+        "left" => "flex-start",
+        "right" => "flex-end",
+        _ => "center"
+    };
 
     private string Cls(Target t, string extra = "") => $"pick {extra} {(t == _target ? "picked" : "")}".Trim();
 
@@ -440,6 +572,27 @@
         var bg = slots.Select(Gallery.GetBackground).FirstOrDefault(b => b is { IsVideo: false });
         return bg is null ? "background: radial-gradient(ellipse at center, #1d3a6b 0%, #0b1733 70%, #050a18 100%)"
                           : $"background-image:url('{bg.Url}')";
+    }
+
+    /// <summary>
+    /// Fundo do louvor em pré-visualização — mesma prioridade do telão real (ProjectionState.CurrentBackground):
+    /// fundo PRÓPRIO deste louvor primeiro, só cai no fundo global da Galeria se o louvor não tiver um definido.
+    /// Sem isto, a pré-visualização mostra uma imagem diferente da que vai realmente para o telão.
+    /// </summary>
+    private string SongBg()
+    {
+        var ownBackground = Media.Resolve(_song?.BackgroundFile);
+        BackgroundMedia? bg = null;
+        if (_slide == 0)
+        {
+            var ownFirstSlide = Media.Resolve(_song?.FirstSlideBackgroundFile);
+            bg = ownFirstSlide ?? (ownBackground is null ? Gallery.GetBackground(BackgroundSlot.FirstSlide) : null);
+        }
+        bg ??= ownBackground ?? Gallery.GetBackground(BackgroundSlot.Slides);
+
+        return bg is { IsVideo: false }
+            ? $"background-image:url('{bg.Url}')"
+            : "background: radial-gradient(ellipse at center, #1d3a6b 0%, #0b1733 70%, #050a18 100%)";
     }
 
     private static string Label(Target t) => t switch

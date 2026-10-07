@@ -421,14 +421,21 @@ table.versions td { white-space: nowrap; }
 .lp-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .lp-default { background: radial-gradient(ellipse at center, #1d3a6b 0%, #0b1733 70%, #050a18 100%); }
 .lp-state { position: relative; color: #94a3b8; font-size: 13px; letter-spacing: .08em; }
-.lp-heading:not(.bible) { text-transform: var(--song-transform, uppercase); color: var(--song-title-color, #fff3d6); font-family: var(--song-font); }
-.lp-heading { position: absolute; left: 14.4%; right: 6.5%; top: 1.9%; height: 10.2%; display: flex; align-items: center; justify-content: center;
-              color: #fff3d6; font-weight: 700; font-size: 6cqh; white-space: nowrap; overflow: hidden; text-shadow: 0 1px 2px #000; }
-.lp-heading.bible { top: 16.4%; left: 14.5%; justify-content: flex-start; color: var(--bible-ref-color, #ff0); font-style: italic; font-family: var(--bible-font); }
+.lp-heading { position: absolute; left: 14.4%; right: 6.5%; height: 10.2%; display: flex; align-items: center;
+              top: var(--song-title-top, 1.85%); font-weight: 700; font-size: calc(var(--song-title-max, 6) * 1cqh);
+              white-space: nowrap; overflow: hidden; text-shadow: 0 1px 2px #000;
+              text-transform: var(--song-transform, uppercase); color: var(--song-title-color, #fff3d6); font-family: var(--song-title-font, var(--song-font)); }
+.lp-heading.bible { top: var(--bible-ref-top, 16.39%); left: 14.5%; font-size: calc(var(--bible-ref-max, 6) * 1cqh);
+                     color: var(--bible-ref-color, #ff0); font-style: italic; font-family: var(--bible-ref-font, var(--bible-font)); }
 .lp-text { position: absolute; inset: 4% 4%; display: flex; flex-direction: column; justify-content: center; text-align: center;
            color: #fff; font-size: 6.2cqh; line-height: 1.2; font-weight: 600; white-space: pre-line; overflow: hidden;
            text-shadow: 0 1px 3px rgba(0,0,0,.9); }
-.lp-text.below-heading { top: 15%; }
+.lp-text.below-heading.song { top: calc(var(--song-title-top, 1.85%) + 13.15%); }
+.lp-text.below-heading.bible { top: calc(var(--bible-ref-top, 16.39%) + 12.61%); }
+.lp-text.song { font-family: var(--song-font); color: var(--song-color, #fff); font-weight: var(--song-weight, 600);
+                text-transform: var(--song-transform, uppercase); line-height: var(--song-line-height, 1.2); }
+.lp-text.bible { font-family: var(--bible-font); color: var(--bible-color, #fff); text-align: var(--bible-align, center);
+                 font-weight: 500; line-height: var(--bible-line-height, 1.2); }
 .lp-text .mk { white-space: normal; display: inline-block; text-align: left; max-width: 100%; }
 .lp-text:has(.mk) { align-items: center; }
 .lp-text p, .lp-text div { margin: 0; }
@@ -509,16 +516,17 @@ table.versions td { white-space: nowrap; }
 .cfg-preview { display: flex; flex-direction: column; gap: 10px; overflow: auto; min-height: 0; }
 .cfg-screen { position: relative; flex: none; width: 100%; max-width: 780px; aspect-ratio: 16 / 9; container-type: size;
               background-size: cover; background-position: center; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.4); }
+.cfg-preview-note { max-width: 780px; }
 
-.pick { cursor: pointer; border-radius: 4px; outline: 2px dashed transparent; outline-offset: 2px; transition: outline-color .1s; }
-.pick:hover { outline-color: rgba(255, 255, 255, .55); }
-.pick.picked { outline: 3px solid #22d3ee; background: rgba(34, 211, 238, .14); }
+.pick { cursor: pointer; border-radius: 4px; transition: background-color .12s, box-shadow .12s; }
+.pick:hover { background: rgba(255, 255, 255, .1); }
+.pick.picked { background: rgba(34, 211, 238, .16); box-shadow: 0 0 0 1px rgba(34, 211, 238, .55); }
 
-.cfg-title { position: absolute; left: 14.4%; right: 6.5%; top: 1.85%; height: 10.2%; display: flex; align-items: center; justify-content: center;
-             font-family: var(--song-font); color: var(--song-title-color); text-transform: var(--song-transform); font-weight: 700; font-size: 6cqh;
-             text-shadow: 0 1px 3px #000; white-space: nowrap; }
-.cfg-lyrics { position: absolute; top: 15%; bottom: 5%; left: 0; right: 0; margin: 0 auto; width: fit-content; max-width: 94%;
-              display: flex; flex-direction: column; justify-content: center; line-height: 1.25;
+.cfg-title { position: absolute; left: 14.4%; right: 6.5%; top: var(--song-title-top, 1.85%); height: 10.2%; display: flex; align-items: center;
+             font-family: var(--song-title-font); color: var(--song-title-color); text-transform: var(--song-transform); font-weight: 700; font-size: 5cqh;
+             text-shadow: 0 1px 3px #000; white-space: nowrap; overflow: hidden; }
+.cfg-lyrics { position: absolute; top: calc(var(--song-title-top, 1.85%) + 13.15%); bottom: 5%; left: 0; right: 0; margin: 0 auto; width: fit-content; max-width: 94%;
+              display: flex; flex-direction: column; justify-content: center; line-height: var(--song-line-height, 1.25);
               font-family: var(--song-font); color: var(--song-color); font-weight: var(--song-weight); text-transform: var(--song-transform);
               text-align: var(--song-align); text-shadow: 0 1px 3px rgba(0,0,0,.9); white-space: nowrap; }
 .cfg-lyrics.full { top: 4%; }
@@ -527,10 +535,10 @@ table.versions td { white-space: nowrap; }
 .cfg-lyrics .paren { color: var(--song-paren); }
 .cfg-lyrics .men { color: var(--song-men); }
 .cfg-lyrics .women { color: var(--song-women); }
-.cfg-ref { position: absolute; left: 14.5%; right: 3.6%; top: 16.4%; height: 10.1%; display: flex; align-items: center;
-           font-family: var(--bible-font); color: var(--bible-ref-color); font-style: italic; font-weight: 700; font-size: 6cqh; text-shadow: 0 1px 3px #000; }
-.cfg-verse { position: absolute; left: 4.6%; right: 6.9%; top: 29%; bottom: 5%; display: block; overflow: hidden; padding-top: 2%;
-             font-family: var(--bible-font); color: var(--bible-color); text-align: var(--bible-align); line-height: 1.25; text-shadow: 0 1px 3px #000; }
+.cfg-ref { position: absolute; left: 14.5%; right: 3.6%; top: var(--bible-ref-top, 16.39%); height: 10.1%; display: flex; align-items: center; overflow: hidden;
+           font-family: var(--bible-ref-font); color: var(--bible-ref-color); font-style: italic; font-weight: 700; font-size: 5cqh; text-shadow: 0 1px 3px #000; }
+.cfg-verse { position: absolute; left: 4.6%; right: 6.9%; top: calc(var(--bible-ref-top, 16.39%) + 12.61%); bottom: 5%; display: block; overflow: hidden; padding-top: 2%;
+             font-family: var(--bible-font); color: var(--bible-color); text-align: var(--bible-align); line-height: var(--bible-line-height, 1.25); text-shadow: 0 1px 3px #000; }
 .cfg-clock { position: absolute; inset: 0; margin: auto; width: fit-content; height: fit-content; font-family: Consolas, "DejaVu Sans Mono", monospace;
              font-size: 22cqh; font-weight: 700; color: var(--clock-color); text-shadow: 0 2px 6px rgba(0,0,0,.8); }
 
@@ -592,5 +600,18 @@ table.versions td { white-space: nowrap; }
 .cfg-screen[data-picked="chorus"] .mk-line[data-t="chorus"],
 .cfg-screen[data-picked="men"] .mk-line[data-t="men"],
 .cfg-screen[data-picked="women"] .mk-line[data-t="women"],
-.cfg-screen[data-picked="paren"] span[data-t="paren"] { outline: 2px dashed rgba(34, 211, 238, .8); outline-offset: 2px; }
+.cfg-screen[data-picked="paren"] span[data-t="paren"] {
+    background: rgba(34, 211, 238, .16); border-radius: 3px; box-shadow: 0 0 0 1px rgba(34, 211, 238, .4);
+}
 .cfg-selected.text-sel { border-left-color: #facc15; }
+
+.cfg-bg-row + .cfg-bg-row { margin-top: 8px; }
+.cfg-bg-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.cfg-bg-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.cfg-bg-thumb { flex: none; padding: 0; border-radius: 6px; border: 2px solid var(--border); cursor: pointer; background: var(--surface-2); }
+.cfg-bg-thumb.thumb.small { width: 72px; aspect-ratio: 16 / 9; }
+.cfg-bg-thumb.none { width: 72px; height: 40px; display: grid; place-items: center; font-size: 11px; color: var(--muted); }
+.cfg-bg-thumb.on { border-color: #22d3ee; box-shadow: 0 0 0 2px #22d3ee; }
+.cfg-bg-thumb:hover { border-color: var(--accent); }
+
+.cfg-slider { width: 100%; accent-color: var(--accent-2); }

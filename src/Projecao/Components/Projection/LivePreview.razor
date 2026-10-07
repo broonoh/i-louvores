@@ -32,9 +32,11 @@
         {
             @if (!string.IsNullOrWhiteSpace(slide.Heading))
             {
-                <div class="lp-heading @(slide.Layout == SlideLayout.Bible ? "bible" : null)">@slide.Heading</div>
+                var isBible = slide.Layout == SlideLayout.Bible;
+                var headingAlign = isBible ? Style?.BibleRefAlign : Style?.SongTitleAlign;
+                <div class="lp-heading @(isBible ? "bible" : null)" style="justify-content:@JustifyFor(headingAlign, isBible)">@slide.Heading</div>
             }
-            <div class="lp-text @(slide.Layout != SlideLayout.Full ? "below-heading" : null)">
+            <div class="lp-text @(slide.Layout != SlideLayout.Full ? "below-heading" : null) @(slide.Layout == SlideLayout.Bible ? "bible" : slide.Markup ? "song" : null)">
                 @if (slide.Html) { @((MarkupString)slide.Text) }
                 else if (slide.Markup) { <SlideText Text="@slide.Text" /> }
                 else { @slide.Text }
@@ -56,4 +58,13 @@
     [Parameter, EditorRequired] public LiveFrame Frame { get; set; } = LiveFrame.Empty;
     [Parameter] public bool IsProjecting { get; set; }
     [Parameter] public ProjectionStyle? Style { get; set; }
+
+    /// <summary>"left"/"center"/"right" → justify-content; a referência bíblica tem "left" como padrão, o título "center".</summary>
+    private static string JustifyFor(string? align, bool isBible) => align switch
+    {
+        "left" => "flex-start",
+        "right" => "flex-end",
+        "center" => "center",
+        _ => isBible ? "flex-start" : "center"
+    };
 }

@@ -86,7 +86,9 @@ public sealed class GalleryService(
     {
         try
         {
-            var psi = new ProcessStartInfo("xdg-open") { UseShellExecute = false };
+            var psi = OperatingSystem.IsWindows()
+                ? new ProcessStartInfo("explorer.exe") { UseShellExecute = false }
+                : new ProcessStartInfo("xdg-open") { UseShellExecute = false };
             psi.ArgumentList.Add(media.GalleryFolder);
             using var _ = Process.Start(psi);
             return true;

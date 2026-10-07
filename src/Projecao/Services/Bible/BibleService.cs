@@ -226,7 +226,14 @@ public sealed class BibleService(IDbContextFactory<AppDbContext> dbFactory, Sett
     private void RefreshReadingInQueue(int versionId, int bookId, int chapter)
     {
         if (projection is null) return;
-        foreach (var item in projection.State.Queue.Where(q => q.Reading is { } r && r.VersionId == versionId && r.BookId == bookId && r.Chapter == chapter).ToList())
+
+        bool Matches(QueueItem q) => q.Reading is { } r && r.VersionId == versionId && r.BookId == bookId && r.Chapter == chapter;
+        var state = projection.State;
+        var candidates = state.Queue.Where(Matches);
+        if (state.AdHoc is { } adHoc && Matches(adHoc))
+            candidates = candidates.Append(adHoc);
+
+        foreach (var item in candidates.ToList())
         {
             using var db = dbFactory.CreateDbContext();
             var version = db.BibleVersions.AsNoTracking().First(v => v.Id == versionId);

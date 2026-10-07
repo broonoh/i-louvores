@@ -37,17 +37,34 @@ public sealed record ProjectionStyle
     public string MenColor { get; init; } = "#ffc600";
     public string WomenColor { get; init; } = "#f7d868";
     public string SongTitleColor { get; init; } = "#fff3d6";
+    public double SongTitleMaxSizePct { get; init; } = 10;
+    public string SongTitleFont { get; init; } = "Franklin Gothic Medium";
+    /// <summary>"left", "center" ou "right".</summary>
+    public string SongTitleAlign { get; init; } = "center";
+    /// <summary>Posição vertical da faixa do título (topo da faixa), em % da altura do ecrã — 0 é o topo.</summary>
+    public double SongTitleTopPct { get; init; } = 1.85;
     public bool SongUppercase { get; init; } = true;
-    /// <summary>"block" = linhas à esquerda num bloco centrado (I-LOUVORES); "center" = cada linha centrada.</summary>
+    /// <summary>"block" = linhas à esquerda num bloco centrado (I-LOUVORES); "center" = cada linha centrada; "right" = linhas à direita num bloco centrado.</summary>
     public string SongAlign { get; init; } = "block";
     public bool SongBold { get; init; } = true;
+    /// <summary>Espaçamento entre linhas da letra (múltiplo da altura da fonte; 1 = colado, 2 = bem espaçado).</summary>
+    public double SongLineHeight { get; init; } = 1.25;
 
     // Bíblia
     public string BibleFont { get; init; } = "Arial";
     public double BibleMaxSizePct { get; init; } = 11;
     public string BibleColor { get; init; } = "#ffffff";
     public string BibleRefColor { get; init; } = "#ffff00";
+    public double BibleRefMaxSizePct { get; init; } = 10;
+    public string BibleRefFont { get; init; } = "Arial";
+    /// <summary>"left", "center" ou "right".</summary>
+    public string BibleRefAlign { get; init; } = "left";
+    /// <summary>Posição vertical da faixa da referência (topo da faixa), em % da altura do ecrã — 0 é o topo.</summary>
+    public double BibleRefTopPct { get; init; } = 16.39;
+    /// <summary>"left", "center" ou "right".</summary>
     public string BibleAlign { get; init; } = "center";
+    /// <summary>Espaçamento entre linhas do versículo (múltiplo da altura da fonte).</summary>
+    public double BibleLineHeight { get; init; } = 1.25;
 
     // Geral
     public string ClockColor { get; init; } = "#f7f0d2";
@@ -168,6 +185,13 @@ public sealed record ProjectionState
 
     public Guid? CurrentItemId { get; init; }
 
+    /// <summary>
+    /// Item projetado diretamente (duplo clique, "▶ Projetar"…) sem passar pela fila.
+    /// Só existe fora da fila; assim que é adicionado (＋ Adicionar/Fila) passa a vir de <see cref="Queue"/>
+    /// e este campo é limpo. É assim que a fila só mostra o que o operador decidiu pôr lá.
+    /// </summary>
+    public QueueItem? AdHoc { get; init; }
+
     public int CurrentSlideIndex { get; init; }
 
     public bool IsProjecting { get; init; }
@@ -213,7 +237,7 @@ public sealed record ProjectionState
         CurrentItemId is { } id ? IndexOf(id) : -1;
 
     public QueueItem? CurrentItem =>
-        CurrentItemIndex is var i and >= 0 ? Queue[i] : null;
+        CurrentItemIndex is var i and >= 0 ? Queue[i] : (AdHoc?.Id == CurrentItemId ? AdHoc : null);
 
     public ProjectionSlide? CurrentSlide =>
         CurrentItem is { } item && CurrentSlideIndex >= 0 && CurrentSlideIndex < item.Slides.Count

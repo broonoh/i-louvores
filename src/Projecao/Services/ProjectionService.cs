@@ -45,10 +45,12 @@ public sealed class ProjectionService(ILogger<ProjectionService> logger)
         if (s.Staged is not { } staged)
             return s;
 
-        var queue = s.IndexOf(staged.Id) >= 0 ? s.Queue : [.. s.Queue, staged];
+        var alreadyQueued = s.IndexOf(staged.Id) >= 0;
+        var queue = alreadyQueued ? s.Queue : [.. s.Queue, staged];
+        var adHoc = s.AdHoc?.Id == staged.Id ? null : s.AdHoc;
         return s.CurrentItemId is null
-            ? s with { Queue = queue, CurrentItemId = staged.Id, CurrentSlideIndex = s.StagedSlideIndex }
-            : s with { Queue = queue };
+            ? s with { Queue = queue, CurrentItemId = staged.Id, CurrentSlideIndex = s.StagedSlideIndex, AdHoc = adHoc }
+            : s with { Queue = queue, AdHoc = adHoc };
     });
 
     /// <summary>
@@ -63,33 +65,45 @@ public sealed class ProjectionService(ILogger<ProjectionService> logger)
         {
             Queue = queue,
             CurrentItemId = shouldSelect ? item.Id : s.CurrentItemId,
-            CurrentSlideIndex = shouldSelect ? 0 : s.CurrentSlideIndex
+            CurrentSlideIndex = shouldSelect ? 0 : s.CurrentSlideIndex,
+            AdHoc = s.AdHoc?.Id == item.Id ? null : s.AdHoc
         };
     });
 
-    /// <summary>Adiciona (se preciso) e torna o item atual, já no slide indicado.</summary>
+    /// <summary>
+    /// Projeta o item já, SEM o pôr na fila de exibição — só quem clica em ＋ Adicionar/Fila
+    /// é que entra lá. Se o item já estiver na fila (reaproveitado), continua lá normalmente.
+    /// </summary>
     public void ProjectNow(QueueItem item, int slideIndex = 0) => Mutate(s =>
     {
-        var queue = s.IndexOf(item.Id) >= 0 ? s.Queue : [.. s.Queue, item];
+        var inQueue = s.IndexOf(item.Id) >= 0;
         return s with
         {
-            Queue = queue,
+            AdHoc = inQueue ? s.AdHoc : item,
             CurrentItemId = item.Id,
             CurrentSlideIndex = Clamp(slideIndex, item.Slides.Count)
         };
     });
 
-    /// <summary>Substitui um item existente (ex.: letra editada) mantendo a posição.</summary>
+    /// <summary>Substitui um item existente (ex.: letra editada) mantendo a posição — na fila ou, se for o caso, no "ao vivo direto".</summary>
     public void ReplaceItem(QueueItem item) => Mutate(s =>
     {
         var index = s.IndexOf(item.Id);
-        if (index < 0)
-            return s;
+        if (index >= 0)
+        {
+            var queue = s.Queue.ToList();
+            queue[index] = item;
+            var slide = s.CurrentItemId == item.Id ? Clamp(s.CurrentSlideIndex, item.Slides.Count) : s.CurrentSlideIndex;
+            return s with { Queue = queue, CurrentSlideIndex = slide };
+        }
 
-        var queue = s.Queue.ToList();
-        queue[index] = item;
-        var slide = s.CurrentItemId == item.Id ? Clamp(s.CurrentSlideIndex, item.Slides.Count) : s.CurrentSlideIndex;
-        return s with { Queue = queue, CurrentSlideIndex = slide };
+        if (s.AdHoc?.Id == item.Id)
+        {
+            var slide = s.CurrentItemId == item.Id ? Clamp(s.CurrentSlideIndex, item.Slides.Count) : s.CurrentSlideIndex;
+            return s with { AdHoc = item, CurrentSlideIndex = slide };
+        }
+
+        return s;
     });
 
     /// <summary>Botão "Deletar". Se for o item atual, o seguinte (ou o anterior) assume.</summary>
@@ -120,14 +134,14 @@ public sealed class ProjectionService(ILogger<ProjectionService> logger)
         return s with { Queue = queue };
     });
 
-    public void ClearQueue() => Mutate(s => s with { Queue = [], CurrentItemId = null, CurrentSlideIndex = 0 });
+    public void ClearQueue() => Mutate(s => s with { Queue = [], CurrentItemId = null, CurrentSlideIndex = 0, AdHoc = null });
 
     /// <summary>
     /// Ao mudar de aba: esvazia a fila e o "Escolhido", mas o telão CONTINUA a mostrar o que
     /// tinha até se projetar algo novo (não apaga o ecrã a meio de um louvor).
     /// </summary>
     public void ClearQueueKeepScreen() =>
-        Mutate(s => s with { Queue = [], CurrentItemId = null, CurrentSlideIndex = 0, Staged = null, StagedSlideIndex = 0 }, keepScreen: true);
+        Mutate(s => s with { Queue = [], CurrentItemId = null, CurrentSlideIndex = 0, Staged = null, StagedSlideIndex = 0, AdHoc = null }, keepScreen: true);
 
     // =====================================================================
     // Navegação
@@ -199,14 +213,26 @@ public sealed class ProjectionService(ILogger<ProjectionService> logger)
         Mutate(current =>
         {
             // Só aplica se entretanto nada mudou (outro clique, outra janela…).
-            var index = current.IndexOf(item.Id);
-            if (index < 0 || current.CurrentItemId != item.Id || current.CurrentSlideIndex != s.CurrentSlideIndex)
+            if (current.CurrentItemId != item.Id || current.CurrentSlideIndex != s.CurrentSlideIndex)
                 return current;
 
-            var queue = current.Queue.ToList();
-            queue[index] = adjacent with { Id = item.Id };
-            replaced = true;
-            return current with { Queue = queue, CurrentSlideIndex = direction > 0 ? 0 : adjacent.Slides.Count - 1 };
+            var newSlide = direction > 0 ? 0 : adjacent.Slides.Count - 1;
+            var index = current.IndexOf(item.Id);
+            if (index >= 0)
+            {
+                var queue = current.Queue.ToList();
+                queue[index] = adjacent with { Id = item.Id };
+                replaced = true;
+                return current with { Queue = queue, CurrentSlideIndex = newSlide };
+            }
+
+            if (current.AdHoc?.Id == item.Id)
+            {
+                replaced = true;
+                return current with { AdHoc = adjacent with { Id = item.Id }, CurrentSlideIndex = newSlide };
+            }
+
+            return current;
         });
         return replaced;
     }
@@ -218,9 +244,9 @@ public sealed class ProjectionService(ILogger<ProjectionService> logger)
             if (s.Queue.Count > 0)
                 return s with { CurrentItemId = s.Queue[0].Id, CurrentSlideIndex = 0 };
 
-            // Fila vazia mas algo escolhido à esquerda: o Próximo começa por aí.
+            // Fila vazia mas algo escolhido à esquerda: o Próximo começa por aí (sem entrar na fila).
             return s.Staged is { } staged
-                ? s with { Queue = [staged], CurrentItemId = staged.Id, CurrentSlideIndex = s.StagedSlideIndex }
+                ? s with { AdHoc = staged, CurrentItemId = staged.Id, CurrentSlideIndex = s.StagedSlideIndex }
                 : s;
         }
 
@@ -253,15 +279,16 @@ public sealed class ProjectionService(ILogger<ProjectionService> logger)
     // Controlo do projetor
     // =====================================================================
 
-    /// <summary>Marca a projeção como ativa. Se nada estiver selecionado, projeta o item preparado.</summary>
+    /// <summary>Marca a projeção como ativa. Se nada estiver selecionado, projeta o item preparado (sem o pôr na fila).</summary>
     public void StartProjection() => Mutate(s =>
     {
         var next = s with { IsProjecting = true };
         if (next.CurrentItem is null && s.Staged is { } staged)
         {
+            var inQueue = s.IndexOf(staged.Id) >= 0;
             next = next with
             {
-                Queue = s.IndexOf(staged.Id) >= 0 ? s.Queue : [.. s.Queue, staged],
+                AdHoc = inQueue ? s.AdHoc : staged,
                 CurrentItemId = staged.Id,
                 CurrentSlideIndex = s.StagedSlideIndex
             };
