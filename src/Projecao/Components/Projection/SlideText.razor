@@ -22,12 +22,12 @@
                 {
                     if (Pickable)
                     {
-                        <span class="@(seg.IsParenthetical ? "mk-paren" : null)" style="@(seg.Color is null ? null : $"color:{seg.Color}")"
+                        <span class="@(seg.IsParenthetical ? "mk-paren" : null)" style="@StyleFor(seg)"
                               data-l="@seg.SourceLine" data-o="@seg.SourceStart" data-t="@(seg.IsParenthetical ? "paren" : null)">@seg.Text</span>
                     }
-                    else if (seg.Color is not null)
+                    else if (StyleFor(seg) is { } style)
                     {
-                        <span class="@(seg.IsParenthetical ? "mk-paren" : null)" style="color:@seg.Color">@seg.Text</span>
+                        <span class="@(seg.IsParenthetical ? "mk-paren" : null)" style="@style">@seg.Text</span>
                     }
                     else if (seg.IsParenthetical) { <span class="mk-paren">@seg.Text</span> }
                     else { @seg.Text }
@@ -56,4 +56,13 @@
         MarkupLineKind.Women => "women",
         _ => chorus ? "chorus" : "lyrics"
     };
+
+    /// <summary>Cor e/ou tamanho próprios do trecho ("[cor=]"/"[tam=]"), combinados num só estilo.</summary>
+    private static string? StyleFor(MarkupSegment seg)
+    {
+        if (seg.Color is null && seg.Size is null) return null;
+        var style = seg.Color is null ? string.Empty : $"color:{seg.Color};";
+        if (seg.Size is { } size) style += $"font-size:{size.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}em;";
+        return style;
+    }
 }

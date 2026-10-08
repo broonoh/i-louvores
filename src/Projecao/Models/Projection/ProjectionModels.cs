@@ -48,7 +48,7 @@ public sealed record ProjectionStyle
     public string SongAlign { get; init; } = "block";
     public bool SongBold { get; init; } = true;
     /// <summary>Espaçamento entre linhas da letra (múltiplo da altura da fonte; 1 = colado, 2 = bem espaçado).</summary>
-    public double SongLineHeight { get; init; } = 1.25;
+    public double SongLineHeight { get; init; } = 1.4;
 
     // Bíblia
     public string BibleFont { get; init; } = "Arial";

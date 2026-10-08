@@ -127,7 +127,7 @@
     </section>
 
     @* ---------------- 4. Projetor (configuração) ---------------- *@
-    <details class="settings" open="@(_monitors.Count != 2 && !s.IsProjecting)">
+    <details class="settings" open="@_settingsOpen">
         <summary>
             <span>⚙ Projetor</span>
             <span class="muted ellipsis">@(SelectedMonitor?.Description ?? "nenhum monitor")</span>
@@ -174,12 +174,18 @@
     private DotNetObjectReference<ProjectionControlPanel>? _selfRef;
     private Timer? _ticker;
 
+    // Decidido só uma vez, ao abrir — o <details> não pode ficar "ligado" a um valor que muda
+    // sozinho (ex.: s.IsProjecting), senão qualquer atualização de estado fecha/abre a secção
+    // à força, no meio de o operador estar a usá-la (ex.: ao escolher o monitor).
+    private bool _settingsOpen;
+
     private MonitorInfo? SelectedMonitor => _monitors.FirstOrDefault(m => m.Id == _selectedMonitorId);
 
     protected override void OnInitialized()
     {
         Projection.OnStateChanged += HandleStateChanged;
         RefreshMonitors();
+        _settingsOpen = _monitors.Count != 2 && !Projection.State.IsProjecting;
         // A pré-visualização mostra relógio/cronómetro a correr.
         _ticker = new Timer(_ => { if (Projection.State.Overlay != OverlayMode.None) _ = InvokeAsync(StateHasChanged); },
             null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));

@@ -49,7 +49,7 @@
 /* 1.º slide do louvor: título na faixa (277,20 → 1794,130), letra (41,158 → 1849,1028) */
 .layout-song-first .heading-box {
     left: 14.43%; right: calc(6.56% + var(--safe-x, 0vw));
-    top: calc(1.85% + var(--safe-y, 0vh)); height: 10.2%;
+    top: 1.85%; height: 10.2%;
 }
 .layout-song-first .slide {
     left: calc(2.14% + var(--safe-x, 0vw)); right: calc(3.7% + var(--safe-x, 0vw));
@@ -83,9 +83,9 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.layout-song-first .heading { text-transform: var(--song-transform, uppercase); text-align: center; color: var(--song-title-color, #fff3d6); font-family: var(--song-font); }
-.layout-bible .heading { text-align: left; color: var(--bible-ref-color, #ffff00); font-style: italic; font-family: var(--bible-font); }
-.layout-bible .text { font-family: var(--bible-font); color: var(--bible-color, #fff); font-weight: 500; text-align: var(--bible-align, center); }
+.layout-song-first .heading { text-transform: var(--song-transform, uppercase); text-align: var(--song-title-align, center); color: var(--song-title-color, #fff3d6); font-family: var(--song-font); }
+.layout-bible .heading { text-align: var(--bible-ref-align, left); color: var(--bible-ref-color, #ffff00); font-style: italic; font-family: var(--bible-font); }
+.layout-bible .text { font-family: var(--bible-font); color: var(--bible-color, #fff); font-weight: 500; text-align: var(--bible-align, center); line-height: var(--bible-line-height, 1.25); }
 
 .text-box {
     flex: 1 1 auto;
@@ -131,10 +131,14 @@
     font-family: var(--song-font);
     color: var(--song-color, #fff);
     font-weight: var(--song-weight, 600);
+    line-height: var(--song-line-height, 1.25);
 }
 /* Configuração "cada linha centrada" */
 .stage.song-center .text.markup { width: 100%; text-align: center; }
-.text.markup ::deep .mk-line { white-space: nowrap; }
+/* Linhas normais tentam caber inteiras numa só linha (o ajuste automático diminui a fonte para isso);
+   mas se mesmo assim uma linha muito comprida não couber nem no tamanho mínimo, quebra em vez de
+   estourar a borda da tela (overflow-wrap cuida até de uma palavra sozinha maior que o ecrã). */
+.text.markup ::deep .mk-line { overflow-wrap: anywhere; }
 
 /* Overlay — Config.ini: Calibri 65 px (em 1280x720), branco, margem 25 */
 .overlay {

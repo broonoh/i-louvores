@@ -17,8 +17,9 @@ public enum MarkupLineKind
 
 /// <param name="Color">Cor própria deste trecho ("[cor=#ffff00]…[/cor]" na letra), já validada.</param>
 /// <param name="SourceLine">Linha do slide (texto original) de onde vem este trecho.</param>
-/// <param name="SourceStart">Posição do trecho nessa linha do texto original (com marcas) — para colorir seleções.</param>
-public sealed record MarkupSegment(string Text, bool IsParenthetical, string? Color = null, int SourceLine = 0, int SourceStart = 0);
+/// <param name="SourceStart">Posição do trecho nessa linha do texto original (com marcas) — para colorir/redimensionar seleções.</param>
+/// <param name="Size">Tamanho próprio deste trecho ("[tam=130]…[/tam]" = 130 % do tamanho normal), já validado.</param>
+public sealed record MarkupSegment(string Text, bool IsParenthetical, string? Color = null, int SourceLine = 0, int SourceStart = 0, double? Size = null);
 
 public sealed record MarkupLine(MarkupLineKind Kind, IReadOnlyList<MarkupSegment> Segments);
 
@@ -34,7 +35,8 @@ public sealed record MarkupSlide(bool IsChorus, IReadOnlyList<MarkupLine> Lines)
 ///   • "(H) " / "(M) " no início da linha = homens / mulheres (cores próprias);
 ///   • texto entre parênteses tem outra cor;
 ///   • "/" no início da linha = linha em branco extra DENTRO do mesmo slide (ex.: "/Instrumentos");
-///   • "[cor=#ffff00]palavra[/cor]" = cor própria só nesse trecho (aba Editor: selecionar texto → cor).
+///   • "[cor=#ffff00]palavra[/cor]" = cor própria só nesse trecho (aba Editor: selecionar texto → cor);
+///   • "[tam=130]palavra[/tam]" = tamanho próprio só nesse trecho, em % do tamanho normal (aba Editor/Configuração: selecionar texto → A−/A+).
 /// Letras sem nenhuma destas marcas funcionam como texto normal (um slide por estrofe).
 /// </summary>
 public static partial class SongMarkup
@@ -51,13 +53,13 @@ public static partial class SongMarkup
             .ToList();
 
         // Um único "*Coro" torna o louvor manual: o operador escreveu todas as repetições.
-        var manual = stanzas.Any(s => ManualChorusRegex().IsMatch(FirstLine(s)));
+        var manual = stanzas.Any(s => ManualChorusRegex().IsMatch(StripMarkTags(FirstLine(s))));
 
         var slides = new List<string>(stanzas.Count * 2);
         string? chorus = null;
         foreach (var stanza in stanzas)
         {
-            var first = FirstLine(stanza);
+            var first = StripMarkTags(FirstLine(stanza));
             slides.Add(stanza);
 
             if (!manual && AutoChorusRegex().IsMatch(first))
@@ -72,14 +74,33 @@ public static partial class SongMarkup
             if (!manual && chorus is not null)
                 slides.Add(chorus);
         }
-        return slides;
+        return slides.SelectMany(SplitLong).ToList();
+    }
+
+    /// <summary>Estrofes grandes ficam ilegíveis (letra minúscula, quase sem margem) — quebra em pedaços de
+    /// no máximo <see cref="MaxLinesPerSlide"/> linhas. Nunca repete o rótulo ("Coro"…) nos pedaços seguintes:
+    /// cada pedaço continua sendo um trecho exato do texto original (necessário para colorir/redimensionar
+    /// trechos selecionados, que localizam o texto por substring).</summary>
+    private const int MaxLinesPerSlide = 4;
+
+    private static IEnumerable<string> SplitLong(string stanza)
+    {
+        var lines = stanza.Split('\n');
+        if (lines.Length <= MaxLinesPerSlide)
+        {
+            yield return stanza;
+            yield break;
+        }
+
+        for (var i = 0; i < lines.Length; i += MaxLinesPerSlide)
+            yield return string.Join('\n', lines.Skip(i).Take(MaxLinesPerSlide));
     }
 
     /// <summary>Interpreta um slide para desenho (cores de refrão, vozes, parênteses…).</summary>
     public static MarkupSlide Parse(string slideText)
     {
         var raw = slideText.Replace("\r\n", "\n").Split('\n');
-        var isChorus = raw.Length > 0 && ChorusLabelRegex().IsMatch(raw[0].Trim());
+        var isChorus = raw.Length > 0 && ChorusLabelRegex().IsMatch(StripMarkTags(raw[0].Trim()));
         var lines = new List<MarkupLine>(raw.Length + 2);
 
         for (var i = 0; i < raw.Length; i++)
@@ -87,10 +108,12 @@ public static partial class SongMarkup
             var offset = raw[i].Length - raw[i].TrimStart().Length; // posição no texto original
             var line = raw[i].Trim();
 
-            if (i == 0 && LabelRegex().IsMatch(line))
+            // O rótulo é detetado pelo texto SEM marcas ("*[tam=130]Coro[/tam]" continua sendo rótulo),
+            // mas o que fica guardado/desenhado passa por Segments() para a cor/tamanho do trecho valerem.
+            if (i == 0 && LabelRegex().IsMatch(StripMarkTags(line)))
             {
                 var shown = line.TrimStart('*').TrimStart();
-                lines.Add(new MarkupLine(MarkupLineKind.Label, [new MarkupSegment(shown, false, null, i, offset + line.Length - shown.Length)]));
+                lines.Add(new MarkupLine(MarkupLineKind.Label, Segments(shown, i, offset + line.Length - shown.Length)));
                 continue;
             }
 
@@ -103,7 +126,7 @@ public static partial class SongMarkup
                 if (line.Length == 0) continue;
             }
 
-            var kind = VoiceRegex().Match(StripColorTags(line)) is { Success: true } v
+            var kind = VoiceRegex().Match(StripMarkTags(line)) is { Success: true } v
                 ? (char.ToUpperInvariant(v.Groups[1].Value[0]) == 'H' ? MarkupLineKind.Men : MarkupLineKind.Women)
                 : MarkupLineKind.Normal;
 
@@ -119,32 +142,42 @@ public static partial class SongMarkup
     /// <summary>Remove as marcas de cor (para pesquisa, títulos e comparações).</summary>
     public static string StripColorTags(string text) => ColorTagRegex().Replace(text, string.Empty);
 
-    /// <summary>Divide a linha em trechos: cor própria ([cor=…]) e parênteses (cor dos parênteses).</summary>
+    /// <summary>Remove as marcas de tamanho (para pesquisa, títulos e comparações).</summary>
+    public static string StripSizeTags(string text) => SizeTagRegex().Replace(text, string.Empty);
+
+    /// <summary>Remove cor e tamanho — para reconhecer rótulos ("Coro"/"Final"/vozes) mesmo com marcas dentro.</summary>
+    private static string StripMarkTags(string text) => StripSizeTags(StripColorTags(text));
+
+    /// <summary>Divide a linha em trechos: cor própria ([cor=…]), tamanho próprio ([tam=…]) e parênteses (cor dos parênteses).</summary>
     private static List<MarkupSegment> Segments(string line, int sourceLine, int baseOffset)
     {
         var result = new List<MarkupSegment>();
         string? color = null;
+        double? size = null;
         var last = 0;
-        foreach (Match tag in ColorTagRegex().Matches(line))
+        foreach (Match tag in AnyTagRegex().Matches(line))
         {
-            if (tag.Index > last) AddWithParens(result, line[last..tag.Index], color, sourceLine, baseOffset + last);
-            color = tag.Groups[1].Success ? CssSafeColor(tag.Groups[1].Value) : null; // [/cor] fecha
+            if (tag.Index > last) AddWithParens(result, line[last..tag.Index], color, size, sourceLine, baseOffset + last);
+            if (tag.Groups["color"].Success) color = CssSafeColor(tag.Groups["color"].Value);
+            else if (tag.Groups["colorClose"].Success) color = null;
+            else if (tag.Groups["size"].Success) size = SafeSize(tag.Groups["size"].Value);
+            else if (tag.Groups["sizeClose"].Success) size = null;
             last = tag.Index + tag.Length;
         }
-        if (last < line.Length) AddWithParens(result, line[last..], color, sourceLine, baseOffset + last);
+        if (last < line.Length) AddWithParens(result, line[last..], color, size, sourceLine, baseOffset + last);
         return result;
     }
 
-    private static void AddWithParens(List<MarkupSegment> result, string text, string? color, int sourceLine, int start)
+    private static void AddWithParens(List<MarkupSegment> result, string text, string? color, double? size, int sourceLine, int start)
     {
         var last = 0;
         foreach (Match m in ParenRegex().Matches(text))
         {
-            if (m.Index > last) result.Add(new MarkupSegment(text[last..m.Index], false, color, sourceLine, start + last));
-            result.Add(new MarkupSegment(m.Value, true, color, sourceLine, start + m.Index));
+            if (m.Index > last) result.Add(new MarkupSegment(text[last..m.Index], false, color, sourceLine, start + last, size));
+            result.Add(new MarkupSegment(m.Value, true, color, sourceLine, start + m.Index, size));
             last = m.Index + m.Length;
         }
-        if (last < text.Length) result.Add(new MarkupSegment(text[last..], false, color, sourceLine, start + last));
+        if (last < text.Length) result.Add(new MarkupSegment(text[last..], false, color, sourceLine, start + last, size));
     }
 
     /// <summary>
@@ -157,6 +190,37 @@ public static partial class SongMarkup
         if (hex is not null && CssSafeColor(hex) is null)
             throw new ArgumentException("Cor inválida.", nameof(hex));
 
+        return ApplyTag(slideText, startLine, startOffset, endLine, endOffset, "cor", ColorTagRegex(), StripColorTags, hex);
+    }
+
+    /// <summary>
+    /// Aumenta/diminui (delta, em pontos percentuais) o tamanho só do trecho selecionado de um slide.
+    /// Parte do tamanho já aplicado a essa seleção (ou 100 % se não houver nenhum) e fica entre 50–300 %.
+    /// Igual à <see cref="ApplyColor"/>, mas com "[tam=NN]…[/tam]".
+    /// </summary>
+    public static string ChangeSize(string slideText, int startLine, int startOffset, int endLine, int endOffset, int delta)
+    {
+        var lines = slideText.Replace("\r\n", "\n").Split('\n');
+        if (startLine > endLine || (startLine == endLine && startOffset > endOffset))
+            (startLine, startOffset, endLine, endOffset) = (endLine, endOffset, startLine, startOffset);
+
+        // O ponto de partida é o tamanho já aberto no início da seleção (ou 100 %).
+        var firstLine = Math.Clamp(startLine, 0, lines.Length - 1);
+        var firstFrom = Math.Clamp(startOffset, 0, lines[firstLine].Length);
+        var current = OpenTagAt(lines[firstLine][..firstFrom], SizeTagRegex()) is { } open ? int.Parse(open) : 100;
+        var next = Math.Clamp(current + delta, 50, 300).ToString();
+
+        return ApplyTag(slideText, startLine, startOffset, endLine, endOffset, "tam", SizeTagRegex(), StripSizeTags, next);
+    }
+
+    /// <summary>
+    /// Núcleo comum a <see cref="ApplyColor"/> e <see cref="ChangeSize"/>: marca (ou tira, com value = null)
+    /// um intervalo do slide com "[tagName=value]…[/tagName]", fechando e reabrindo uma marca já aberta
+    /// no ponto da seleção.
+    /// </summary>
+    private static string ApplyTag(string slideText, int startLine, int startOffset, int endLine, int endOffset,
+        string tagName, Regex tagRegex, Func<string, string> stripTags, string? value)
+    {
         var lines = slideText.Replace("\r\n", "\n").Split('\n');
         if (startLine > endLine || (startLine == endLine && startOffset > endOffset))
             (startLine, startOffset, endLine, endOffset) = (endLine, endOffset, startLine, startOffset);
@@ -170,42 +234,50 @@ public static partial class SongMarkup
             if (from >= to) continue;
 
             var before = line[..from];
-            var selected = StripColorTags(line[from..to]);
+            var selected = stripTags(line[from..to]);
             var after = line[to..];
 
-            // Cor que estava "aberta" no ponto da seleção: fecha antes e reabre depois.
-            var open = OpenColorAt(before);
+            // Marca que estava "aberta" no ponto da seleção: fecha antes e reabre depois.
+            var open = OpenTagAt(before, tagRegex);
             var sb = new System.Text.StringBuilder(before);
-            if (open is not null) sb.Append("[/cor]");
+            if (open is not null) sb.Append($"[/{tagName}]");
 
             var trimmed = selected.Trim();
             var lead = selected[..(selected.Length - selected.TrimStart().Length)];
             var trail = selected[selected.TrimEnd().Length..];
-            if (hex is not null && trimmed.Length > 0)
-                sb.Append(lead).Append($"[cor={hex}]").Append(trimmed).Append("[/cor]").Append(trail);
+            if (value is not null && trimmed.Length > 0)
+                sb.Append(lead).Append($"[{tagName}={value}]").Append(trimmed).Append($"[/{tagName}]").Append(trail);
             else
                 sb.Append(selected);
 
-            if (open is not null) sb.Append($"[cor={open}]");
+            if (open is not null) sb.Append($"[{tagName}={open}]");
             sb.Append(after);
-            lines[i] = CleanEmptyTags(sb.ToString());
+            lines[i] = CleanEmptyTags(sb.ToString(), tagName);
         }
         return string.Join('\n', lines);
     }
 
-    private static string? OpenColorAt(string textBefore)
+    private static string? OpenTagAt(string textBefore, Regex tagRegex)
     {
         string? open = null;
-        foreach (Match m in ColorTagRegex().Matches(textBefore))
+        foreach (Match m in tagRegex.Matches(textBefore))
             open = m.Groups[1].Success ? m.Groups[1].Value : null;
         return open;
     }
 
-    // "[cor=#fff][/cor]" vazios que ficam de sobra
-    private static string CleanEmptyTags(string line) => EmptyTagRegex().Replace(line, string.Empty);
+    // "[cor=#fff][/cor]" / "[tam=130][/tam]" vazios que ficam de sobra
+    private static string CleanEmptyTags(string line, string tagName) =>
+        Regex.Replace(line, $@"\[{tagName}=[^\]\s]{{1,20}}\]\s*\[/{tagName}\]", string.Empty, RegexOptions.IgnoreCase);
 
-    [GeneratedRegex(@"\[cor=[^\]\s]{1,20}\]\s*\[/cor\]", RegexOptions.IgnoreCase)]
-    private static partial Regex EmptyTagRegex();
+    // Só 2–3 dígitos (50–300 %); qualquer outra coisa cai no padrão (100 %).
+    private static double? SafeSize(string value) =>
+        int.TryParse(value, out var pct) && pct is >= 50 and <= 300 ? pct / 100.0 : null;
+
+    [GeneratedRegex(@"\[(?:tam=(\d{2,3})|/tam)\]", RegexOptions.IgnoreCase)]
+    private static partial Regex SizeTagRegex();
+
+    [GeneratedRegex(@"\[(?:cor=(?<color>[^\]\s]{1,20})|(?<colorClose>/cor)|tam=(?<size>\d{2,3})|(?<sizeClose>/tam))\]", RegexOptions.IgnoreCase)]
+    private static partial Regex AnyTagRegex();
 
     // Só #RGB/#RRGGBB (as cores da paleta); qualquer outra coisa é ignorada (sem injeção de CSS).
     private static string? CssSafeColor(string value) => HexColorRegex().IsMatch(value) ? value : null;

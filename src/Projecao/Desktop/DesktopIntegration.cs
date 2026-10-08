@@ -74,16 +74,23 @@ internal static class DesktopIntegration
             changed = true;
         }
 
-        // .desktop — só se ainda não existir (o do instalador tem prioridade)
+        // .desktop — só se ainda não existir OU se for um atalho escrito por uma execução de
+        // desenvolvimento (não pelo instalador) que ficou a apontar para um caminho antigo —
+        // ex.: depois de mudar a framework-alvo (.NET 9 → 10), o atalho ficava preso à build
+        // antiga, com o ícone congelado na versão de então. Um atalho do instalador (Exec dentro
+        // de "i-louvores-app") nunca é tocado aqui.
         var desktopFile = Path.Combine(dataHome, "applications", $"{AppId}.desktop");
-        if (!File.Exists(desktopFile) && Environment.ProcessPath is { } exe)
+        var installedAppExe = Path.Combine(dataHome, "i-louvores-app", AppId);
+        var currentExec = TryReadExec(desktopFile);
+        var isDevEntry = currentExec is null || !currentExec.Equals(installedAppExe, StringComparison.Ordinal);
+
+        if (isDevEntry && Environment.ProcessPath is { } exe)
         {
             // Via "dotnet i-louvores.dll" o ProcessPath é o dotnet: usa o apphost ao lado da dll.
             var apphost = Path.Combine(AppContext.BaseDirectory, AppId);
             var exec = File.Exists(apphost) ? apphost : exe;
 
-            Directory.CreateDirectory(Path.GetDirectoryName(desktopFile)!);
-            File.WriteAllText(desktopFile, $"""
+            var desired = $"""
                 [Desktop Entry]
                 Type=Application
                 Name=I-LOUVORES
@@ -95,8 +102,14 @@ internal static class DesktopIntegration
                 Categories=Office;Presentation;
                 StartupWMClass={AppId}
 
-                """);
-            changed = true;
+                """;
+
+            if (!File.Exists(desktopFile) || File.ReadAllText(desktopFile) != desired)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(desktopFile)!);
+                File.WriteAllText(desktopFile, desired);
+                changed = true;
+            }
         }
 
         if (changed)
@@ -109,6 +122,16 @@ internal static class DesktopIntegration
                          ("update-desktop-database", Path.GetDirectoryName(desktopFile)!) })
                 TryRun(cmd, args);
         }
+    }
+
+    private static string? TryReadExec(string desktopFile)
+    {
+        if (!File.Exists(desktopFile))
+            return null;
+
+        return File.ReadLines(desktopFile)
+            .FirstOrDefault(l => l.StartsWith("Exec=", StringComparison.Ordinal))
+            ?["Exec=".Length..].Trim('"');
     }
 
     private static bool SameContent(string a, string b) =>

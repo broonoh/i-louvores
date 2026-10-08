@@ -81,6 +81,10 @@
                             <button class="swatch-sm" style="background:@hex" title="@name" @onclick="() => ColorSelectionAsync(hex)"></button>
                         }
                         <button class="nocolor" title="Tira a cor do texto selecionado" @onclick="() => ColorSelectionAsync(null)">Sem cor</button>
+                        <span class="sep">|</span>
+                        <span>Tamanho:</span>
+                        <button class="big" title="Diminuir o texto selecionado" @onclick="() => SizeSelectionAsync(-10)">A−</button>
+                        <button class="big" title="Aumentar o texto selecionado" @onclick="() => SizeSelectionAsync(+10)">A+</button>
                     </div>
                     @if (_colorHint)
                     {
@@ -158,6 +162,12 @@
     private async Task ColorSelectionAsync(string? hex)
     {
         _colorHint = !await JS.InvokeAsync<bool>("projecao.colorSelection", _lyricsRef, hex);
+    }
+
+    /// <summary>Aumenta/diminui o tamanho só do texto selecionado na letra (marca [tam=…]…[/tam]).</summary>
+    private async Task SizeSelectionAsync(int delta)
+    {
+        _colorHint = !await JS.InvokeAsync<bool>("projecao.sizeSelection", _lyricsRef, delta);
     }
 
     protected override async Task OnInitializedAsync()

@@ -49,6 +49,30 @@ public class SongMarkupTests
     }
 
     [Fact]
+    public void Stanzas_over_4_lines_are_split_into_several_slides()
+    {
+        var slides = SongMarkup.BuildSlides("L1\nL2\nL3\nL4\nL5");
+        Assert.Equal(["L1\nL2\nL3\nL4", "L5"], slides);
+    }
+
+    [Fact]
+    public void Stanzas_with_up_to_4_lines_stay_in_one_slide()
+    {
+        var slides = SongMarkup.BuildSlides("L1\nL2\nL3\nL4");
+        Assert.Equal(["L1\nL2\nL3\nL4"], slides);
+    }
+
+    [Fact]
+    public void Split_chunks_are_exact_substrings_of_the_original_stanza()
+    {
+        // Necessário para colorir/redimensionar: ApplyColor/ChangeSize localizam o trecho por
+        // substring no texto original (ver SettingsTab.ColorTextAsync/SizeTextAsync).
+        const string stanza = "Coro\nL1\nL2\nL3\nL4\nL5";
+        foreach (var slide in SongMarkup.BuildSlides(stanza))
+            Assert.Contains(slide, stanza);
+    }
+
+    [Fact]
     public void Song_queue_item_has_title_heading_on_first_slide()
     {
         var item = QueueItemFactory.FromSong(new Projecao.Models.Song { Title = "Agnus Dei", Number = 7, Lyrics = "V1\n\nCoro\nR\n\nV2" });

@@ -86,7 +86,7 @@
                 var isBible = file.RelativePath == bibleSel;
                 var isGeneral = file.RelativePath == generalSel;
                 <div @key="file.RelativePath" class="card @(isSlides || isFirst || isBible || isGeneral ? "selected" : null)"
-                     title="@file.RelativePath" @onclick="() => Select(BackgroundSlot.Slides, isSlides ? null : file.RelativePath)">
+                     title="@file.RelativePath">
                     <div class="thumb">
                         <MediaThumb File="file" />
                         @if (isSlides) { <span class="badge-sel">SELECIONADO!</span> }
@@ -99,9 +99,11 @@
                         <span class="ellipsis">@file.Name</span>
                         <span class="muted">@FormatSize(file.SizeBytes)</span>
                     </div>
-                    <div class="card-actions" @onclick:stopPropagation="true">
+                    <div class="card-actions">
                         <button class="@(isFirst ? "on" : null)" title="Usar como fundo do 1.º slide"
                                 @onclick="() => Select(BackgroundSlot.FirstSlide, isFirst ? null : file.RelativePath)">1.º slide</button>
+                        <button class="@(isSlides ? "on" : null)" title="Usar como fundo dos restantes slides do louvor"
+                                @onclick="() => Select(BackgroundSlot.Slides, isSlides ? null : file.RelativePath)">Restantes</button>
                         <button class="@(isBible ? "on-bible" : null)" title="Usar como fundo das passagens bíblicas"
                                 @onclick="() => Select(BackgroundSlot.Bible, isBible ? null : file.RelativePath)">Bíblia</button>
                         <button class="@(isGeneral ? "on-general" : null)" title="Usar como fundo do relógio/cronómetro"

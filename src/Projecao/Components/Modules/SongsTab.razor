@@ -1,12 +1,14 @@
 @*
     Módulo Louvores (versão inicial): pesquisa, lista, metadados e slides por estrofe.
-    Clicar num slide prepara o louvor; se ele já estiver no ar, salta para esse slide.
+    Clicar num slide já projeta (abre o telão se ainda não estiver ligado).
 *@
 @implements IDisposable
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject ProjectionService Projection
 @inject MediaLibraryService Media
 @inject SongService SongStore
+@inject IDisplayService Displays
+@inject IProjectionWindowManager ProjectionWindow
 @inject ILogger<SongsTab> Logger
 
 @{
@@ -196,23 +198,43 @@
         Projection.Stage(_item);
     }
 
-    private void ClickSlide(int index)
+    private Task ClickSlide(int index)
     {
         _slideIndex = index;
-
-        // Se este louvor já está no ar, o clique navega diretamente.
-        if (Projection.State.CurrentItem is { Kind: ProjectionContentKind.Song } cur && cur.SourceId == _selected?.Id)
-            Projection.GoToSlide(index);
+        return ProjectFrom(index);
     }
 
-    private void ProjectFrom(int index)
+    private async Task ProjectFrom(int index)
     {
         if (_item is null)
             return;
 
+        await EnsureProjectingAsync();
+
         // Reutiliza o item já na fila (mesmo louvor) em vez de o duplicar.
         var existing = Projection.State.Queue.FirstOrDefault(q => q.Kind == ProjectionContentKind.Song && q.SourceId == _item.SourceId);
         Projection.ProjectNow(existing ?? _item, index);
+    }
+
+    /// <summary>Liga o telão (abre a janela no monitor preferido) se ainda não estiver ligado.</summary>
+    private async Task EnsureProjectingAsync()
+    {
+        if (Projection.State.IsProjecting)
+            return;
+
+        try
+        {
+            var monitor = MonitorSelection.PickDefault(Displays.GetMonitors(), Displays.PreferredMonitor);
+            if (monitor is null)
+                return;
+
+            await ProjectionWindow.OpenAsync(monitor);
+            Projection.StartProjection();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Falha ao ligar o telão a partir do módulo Louvores");
+        }
     }
 
     private void HandleStateChanged() => _ = InvokeAsync(StateHasChanged);

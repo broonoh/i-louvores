@@ -17,6 +17,10 @@ internal static class DesktopHost
 {
     public const string PanelTitle = "Projeção - Painel de Controle";
 
+    // Tamanho "ideal" (ecrãs grandes) e o mínimo utilizável (ecrãs pequenos, ex.: 1280x1024).
+    private const int PanelPreferredWidth = 1400, PanelPreferredHeight = 860;
+    private const int PanelMinWidth = 1100, PanelMinHeight = 650;
+
     public static int Run(string[] args)
     {
         var app = BuildServer(args);
@@ -40,8 +44,8 @@ internal static class DesktopHost
             .SetLogVerbosity(0)
             .SetTitle(PanelTitle)
             .SetUseOsDefaultSize(false)
-            .SetSize(1400, 860)
-            .SetMinSize(1100, 650)
+            .SetSize(PanelMinWidth, PanelMinHeight) // tamanho seguro p/ qualquer ecrã; FitPanelToScreen ajusta a seguir
+            .SetMinSize(PanelMinWidth, PanelMinHeight)
             .Center()
 #if DEBUG
             .SetDevToolsEnabled(true)
@@ -52,6 +56,7 @@ internal static class DesktopHost
             .Load(access.WithToken($"{baseUrl}/"));
 
         AppIcon.Apply(panel);
+        panel.RegisterWindowCreatedHandler((_, _) => FitPanelToScreen(panel));
         if (OperatingSystem.IsWindows())
             app.Services.GetRequiredService<Win32DisplayService>().Attach(panel, PanelTitle);
         else
@@ -69,6 +74,34 @@ internal static class DesktopHost
         projector.CloseAsync().GetAwaiter().GetResult();
         app.StopAsync(TimeSpan.FromSeconds(3)).GetAwaiter().GetResult();
         return 0;
+    }
+
+    /// <summary>
+    /// Ajusta o painel ao ecrã onde abriu: cresce até ao tamanho preferido em monitores
+    /// grandes, encolhe até ao mínimo utilizável em monitores pequenos (ex.: 1280x1024) —
+    /// nunca maior do que o ecrã disponível.
+    /// </summary>
+    private static void FitPanelToScreen(PhotinoWindow panel)
+    {
+        const int margin = 80; // barra de tarefas, decorações da janela…
+
+        try
+        {
+            var monitor = (OperatingSystem.IsWindows()
+                    ? Win32.QueryMonitors(panel.WindowHandle)
+                    : Gtk.QueryMonitors(Gtk.FindWindowByTitle(PanelTitle)))
+                .FirstOrDefault(m => m.IsPrimary);
+            if (monitor is null)
+                return;
+
+            var width = Math.Clamp(monitor.Width - margin, PanelMinWidth, PanelPreferredWidth);
+            var height = Math.Clamp(monitor.Height - margin, PanelMinHeight, PanelPreferredHeight);
+            panel.SetSize(width, height).Center();
+        }
+        catch
+        {
+            // Mantém o tamanho mínimo já aplicado — nunca impedir o arranque por causa disto.
+        }
     }
 
     private static WebApplication BuildServer(string[] args)

@@ -23,8 +23,8 @@
         <span class="cfg-hint">
             @if (_mode == Mode.Song)
             {
-                <span>🖱 <b>Arraste o rato</b> sobre as palavras para colorir só essas (neste louvor) ·
-                    <b>clique</b> num texto para mudar todos os louvores</span>
+                <span>🖱 <b>Arraste o mouse</b> sobre as palavras para colorir só essas (neste louvor) ·
+                    <b>clique</b> em uma parte do texto para mudar todos os louvores</span>
             }
             else
             {
@@ -143,6 +143,17 @@
                     <div class="muted small">Cor atual: @PaletteName(GetColor(_target))</div>
                 }
             </div>
+
+            @if (_sel is not null)
+            {
+                <div class="cfg-group">
+                    <div class="cfg-label">Tamanho do texto selecionado</div>
+                    <div class="sizer">
+                        <button class="big" @onclick="() => SizeTextAsync(-10)" title="Diminuir só este trecho">A−</button>
+                        <button class="big" @onclick="() => SizeTextAsync(+10)" title="Aumentar só este trecho">A+</button>
+                    </div>
+                </div>
+            }
 
             @if (_sel is null && SizeOf(_target) is { } size)
             {
@@ -339,6 +350,21 @@
 
         var oldStanza = slides[_slide];
         var newStanza = SongMarkup.ApplyColor(oldStanza, _sel.StartLine, _sel.StartOffset, _sel.EndLine, _sel.EndOffset, hex);
+        _songLyrics = _songLyrics.Replace(oldStanza, newStanza);
+        _sel = null;
+        _appliedMessage = false;
+        await JS.InvokeVoidAsync("projecao.clearSelection");
+    }
+
+    /// <summary>Aumenta/diminui o tamanho só do trecho selecionado deste louvor (fica no rascunho até "Aplicar").</summary>
+    private async Task SizeTextAsync(int delta)
+    {
+        if (_sel is null || _song is null) return;
+        var slides = SongSlides;
+        if (_slide >= slides.Count) return;
+
+        var oldStanza = slides[_slide];
+        var newStanza = SongMarkup.ChangeSize(oldStanza, _sel.StartLine, _sel.StartOffset, _sel.EndLine, _sel.EndOffset, delta);
         _songLyrics = _songLyrics.Replace(oldStanza, newStanza);
         _sel = null;
         _appliedMessage = false;

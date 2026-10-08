@@ -204,6 +204,37 @@ window.projecao = (() => {
         return true;
     }
 
+    // Editor de louvores: tamanho só no texto selecionado da letra → [tam=NN]…[/tam] (NN = % do tamanho normal).
+    // delta = pontos percentuais (+10/-10). Parte do tamanho já aplicado à seleção (ou 100%). Devolve false se não houver seleção.
+    const SIZE_TAG = /\[(?:tam=\d{2,3}|\/tam)\]/gi;
+    function sizeSelection(textarea, delta) {
+        if (!textarea) return false;
+        let start = textarea.selectionStart, end = textarea.selectionEnd;
+        if (start === end) return false;
+        const value = textarea.value;
+
+        // Se a seleção está logo dentro de uma marca existente, inclui-a (para ajustar o tamanho já aplicado).
+        const before = value.slice(0, start), after = value.slice(end);
+        const openBefore = before.match(/\[tam=(\d{2,3})\]$/i);
+        const closeAfter = after.match(/^\[\/tam\]/i);
+        if (openBefore && closeAfter) { start -= openBefore[0].length; end += closeAfter[0].length; }
+
+        const current = openBefore ? parseInt(openBefore[1], 10) : 100;
+        const next = Math.min(300, Math.max(50, current + delta));
+
+        const selected = value.slice(start, end).replace(SIZE_TAG, '');
+        const wrapped = selected.split('\n').map(line => {
+            const m = line.match(/^(\s*)(.*?)(\s*)$/);
+            return m[2] ? `${m[1]}[tam=${next}]${m[2]}[/tam]${m[3]}` : line;
+        }).join('\n');
+
+        textarea.value = value.slice(0, start) + wrapped + value.slice(end);
+        textarea.setSelectionRange(start, start + wrapped.length);
+        textarea.focus();
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+    }
+
     // Aba Configuração: clique = escolher elemento (data-t); arrastar = selecionar trecho (data-l/data-o).
     function cfgBind(container, dotnetRef) {
         if (!container) return;
@@ -260,7 +291,7 @@ window.projecao = (() => {
     }
 
     return {
-        registerHotkeys, unregisterHotkeys, fitText, fitPreview, markProjector, setTheme, scrollIntoView, colorSelection,
+        registerHotkeys, unregisterHotkeys, fitText, fitPreview, markProjector, setTheme, scrollIntoView, colorSelection, sizeSelection,
         cfgBind, clearSelection,
         editorInit, editorExec, editorFontSize, editorSetHtml
     };

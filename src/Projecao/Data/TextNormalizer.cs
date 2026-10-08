@@ -35,7 +35,7 @@ public static partial class TextNormalizer
     /// </summary>
     public static string NormalizeForSearch(string? value)
     {
-        var text = Normalize(ColorTagRegex().Replace(value ?? string.Empty, string.Empty)); // [cor=…]…[/cor]
+        var text = Normalize(ColorTagRegex().Replace(value ?? string.Empty, string.Empty)); // [cor=…]…[/cor] / [tam=…]…[/tam]
         if (text.Length == 0)
             return text;
 
@@ -79,7 +79,7 @@ public static partial class TextNormalizer
     [GeneratedRegex(@"\s+")]
     private static partial Regex WhitespaceRegex();
 
-    [GeneratedRegex(@"\[(?:cor=[^\]\s]{1,20}|/cor)\]", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"\[(?:cor=[^\]\s]{1,20}|/cor|tam=\d{2,3}|/tam)\]", RegexOptions.IgnoreCase)]
     private static partial Regex ColorTagRegex();
 
     [GeneratedRegex(@"['’‘`´]")]

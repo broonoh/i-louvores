@@ -99,3 +99,75 @@ public class ApplyColorTests
         Assert.Throws<ArgumentException>(() => SongMarkup.ApplyColor("X", 0, 0, 0, 1, "red;x"));
     }
 }
+
+public class SizeTagTests
+{
+    [Fact]
+    public void Sized_words_are_parsed_per_segment()
+    {
+        var slide = SongMarkup.Parse("QUANDO [tam=130]JESUS[/tam] DERRAMOU");
+        var segs = slide.Lines[0].Segments;
+        Assert.Equal(["QUANDO ", "JESUS", " DERRAMOU"], segs.Select(s => s.Text));
+        Assert.Equal([null, 1.3, null], segs.Select(s => s.Size));
+    }
+
+    [Fact]
+    public void Color_and_size_tags_combine_independently()
+    {
+        var slide = SongMarkup.Parse("[cor=#ffff00][tam=150]JESUS[/tam][/cor]");
+        var seg = slide.Lines[0].Segments.Single();
+        Assert.Equal("#ffff00", seg.Color);
+        Assert.Equal(1.5, seg.Size);
+    }
+
+    [Fact]
+    public void First_change_starts_from_100_percent()
+    {
+        var result = SongMarkup.ChangeSize("EU SEI QUE FOI", 0, 3, 0, 6, +10);
+        Assert.Equal("EU [tam=110]SEI[/tam] QUE FOI", result);
+    }
+
+    [Fact]
+    public void Repeated_change_adjusts_the_existing_tag_instead_of_nesting()
+    {
+        var once = SongMarkup.ChangeSize("EU SEI QUE FOI", 0, 3, 0, 6, +10);
+        var seg = SongMarkup.Parse(once).Lines[0].Segments.Single(s => s.Text == "SEI");
+        var twice = SongMarkup.ChangeSize(once, 0, seg.SourceStart, 0, seg.SourceStart + 3, +10);
+        Assert.Equal("EU [tam=120]SEI[/tam] QUE FOI", twice);
+    }
+
+    [Fact]
+    public void Size_is_clamped_between_50_and_300_percent()
+    {
+        var tiny = SongMarkup.ChangeSize("ABC", 0, 0, 0, 3, -1000);
+        Assert.Equal("[tam=50]ABC[/tam]", tiny);
+
+        var seg = SongMarkup.Parse(tiny).Lines[0].Segments.Single();
+        var huge = SongMarkup.ChangeSize(tiny, 0, seg.SourceStart, 0, seg.SourceStart + 3, +1000);
+        Assert.Equal("[tam=300]ABC[/tam]", huge);
+    }
+
+    [Fact]
+    public void Search_ignores_size_tags()
+    {
+        Assert.Equal("quando jesus derramou", TextNormalizer.NormalizeForSearch("QUANDO [tam=130]JESUS[/tam] DERRAMOU"));
+        Assert.Equal("JESUS", SongMarkup.StripSizeTags("[tam=130]JESUS[/tam]"));
+    }
+
+    [Fact]
+    public void Sizing_or_coloring_the_label_word_keeps_it_recognized_as_a_label()
+    {
+        // "*Coro" com o próprio "Coro" redimensionado: continua um rótulo (sem "*" nem colchetes à mostra).
+        var slide = SongMarkup.Parse("*[tam=110]Coro[/tam]\nLETRA");
+        var label = slide.Lines[0];
+        Assert.Equal(MarkupLineKind.Label, label.Kind);
+        Assert.Equal("Coro", label.Segments.Single().Text);
+        Assert.Equal(1.1, label.Segments.Single().Size);
+        Assert.True(slide.IsChorus);
+
+        // O mesmo com cor, e sem asterisco (refrão automático).
+        var colored = SongMarkup.Parse("[cor=#ffff00]Coro[/cor]\nLETRA");
+        Assert.Equal(MarkupLineKind.Label, colored.Lines[0].Kind);
+        Assert.Equal("#ffff00", colored.Lines[0].Segments.Single().Color);
+    }
+}

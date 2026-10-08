@@ -234,7 +234,7 @@ label.button input[type=file] { position: absolute; inset: 0; opacity: 0; cursor
 .placeholder code { display: inline-block; margin-top: 6px; padding: 4px 8px; background: var(--surface-2); border-radius: 4px; user-select: text; }
 
 .grid-media { flex: 1; min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; align-content: start; padding-bottom: 8px; }
-.card { background: var(--surface); border: 2px solid var(--border); border-radius: var(--radius); overflow: hidden; cursor: pointer; display: flex; flex-direction: column; }
+.card { background: var(--surface); border: 2px solid var(--border); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; }
 .card:hover { border-color: var(--accent); }
 .card.selected { border-color: var(--ok); box-shadow: 0 0 0 2px rgba(22, 163, 74, .35); }
 
@@ -281,8 +281,7 @@ label.button input[type=file] { position: absolute; inset: 0; opacity: 0; cursor
 .mk { text-transform: var(--song-transform, uppercase); }
 .mk-line { min-height: 1.25em; }
 .mk-label { font-size: .7em; opacity: .9; font-style: italic; color: var(--song-chorus, #ffff00); }
-.mk-chorus { color: var(--song-chorus, #ffff00); font-weight: 700; font-style: italic; }
-.mk-chorus .mk-label { color: var(--song-chorus, #ffff00); }
+.mk-chorus { font-weight: 700; font-style: italic; }
 .mk-paren { color: var(--song-paren, #fff833); }
 .mk-men { color: var(--song-men, #ffc600); }
 .mk-women { color: var(--song-women, #f7d868); }
@@ -583,6 +582,8 @@ table.versions td { white-space: nowrap; }
 .swatch-sm { width: 24px; height: 24px; padding: 0; border-radius: 6px; border: 2px solid var(--border); cursor: pointer; }
 .swatch-sm:hover { transform: scale(1.12); border-color: var(--accent); }
 .color-bar .nocolor { padding: 3px 8px; font-size: 12px; }
+.color-bar .sep { opacity: .4; }
+.color-bar .big { padding: 2px 10px; font-size: 13px; font-weight: 700; }
 
 /* Configuração: louvor real, selecionável */
 .cfg-song-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; max-width: 780px; }
